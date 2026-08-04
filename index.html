@@ -31,7 +31,7 @@ button{background:var(--red);border-color:var(--red);cursor:pointer}label{displa
 import{initializeApp}from"https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import{getAuth,signInWithEmailAndPassword,onAuthStateChanged,signOut}from"https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import{getFirestore,doc,getDoc,setDoc,collection,getDocs}from"https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-const app=initializeApp({apiKey:"AIzaSyAVp_wqzt5gn54Yd0-0hFf7u9GrlTglV_xEIs",authDomain:"spiderweb-d10c7.firebaseapp.com",projectId:"spiderweb-d10c7",storageBucket:"spiderweb-d10c7.firebasestorage.app",messagingSenderId:"341291634792",appId:"1:341291634792:web:25b56a063f24c9b983ebdd"});
+const app=initializeApp({apiKey:"AIzaSyAVp_wqzt5gn54y0-0hFf7u9GrTgV_xEls",authDomain:"spiderweb-d10c7.firebaseapp.com",projectId:"spiderweb-d10c7",storageBucket:"spiderweb-d10c7.firebasestorage.app",messagingSenderId:"341291634792",appId:"1:341291634792:web:25b56a063f24c9b983ebdd"});
 const auth=getAuth(app),db=getFirestore(app),CD=doc(db,'content','site');
 let portfolio=[],taking=true;
 const $=id=>document.getElementById(id);
