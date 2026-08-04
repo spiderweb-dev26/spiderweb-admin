@@ -1,0 +1,51 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Spiderweb — Admin</title>
+<style>
+:root{--bg:#120609;--panel:#231017;--line:rgba(230,36,46,.2);--red:#e6242e;--ink:#f7eef0;--muted:#c2a9ae}
+*{margin:0;padding:0;box-sizing:border-box}body{background:var(--bg);color:var(--ink);font:15px/1.5 'Segoe UI',sans-serif;padding:2rem}
+h1{font-size:1.4rem;margin-bottom:1rem}h1 b{color:var(--red)}
+.card{max-width:860px;margin:0 auto;background:var(--panel);border:1px solid var(--line);padding:1.5rem;border-radius:8px}
+input,select,textarea,button{font:inherit;padding:.55rem .7rem;border:1px solid var(--line);background:var(--bg);color:var(--ink);border-radius:4px}
+button{background:var(--red);border-color:var(--red);cursor:pointer}label{display:block;font-size:.72rem;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin:.7rem 0 .3rem}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:.8rem}.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:.8rem}
+.lead{border-bottom:1px dashed var(--line);padding:.7rem 0}.lead small{color:var(--muted)}
+.pfitem{display:flex;justify-content:space-between;align-items:center;border-bottom:1px dashed var(--line);padding:.5rem 0}
+.hide{display:none}.err{color:#ff8a8a;margin-top:.6rem}.ok{color:#7dffa0;margin-top:.6rem}
+</style></head><body>
+<div class="card" id="loginBox"><h1>SPIDER<b>WEB</b> · ADMIN</h1>
+ <label>Email</label><input id="em" type="email" placeholder="admin@…">
+ <label>Password</label><input id="pw" type="password">
+ <p><button id="go">Log in</button></p><p class="err" id="le"></p></div>
+
+<div class="card hide" id="app"><h1>SPIDER<b>WEB</b> · ADMIN <button id="out" style="float:right;background:transparent;border-color:var(--line)">Logout</button></h1>
+ <h1 style="font-size:1rem">Leads</h1><div id="leads"><em style="color:var(--muted)">loading…</em></div>
+ <h1 style="font-size:1rem;margin-top:1.4rem">Portfolio</h1><div id="pflist"></div>
+ <div class="row"><div><label>Title</label><input id="p_t"></div><div><label>Live URL</label><input id="p_u" placeholder="https://…"></div></div>
+ <div class="grid3"><div><label>Type</label><select id="p_c"><option value="web">web</option><option value="shop">shop</option><option value="bot">bot</option><option value="webapp">webapp</option></select></div><div><label>Screenshot (img/work/…)</label><input id="p_i"></div><div><label>Tags, comma-sep</label><input id="p_g"></div></div>
+ <label>One-line blurb</label><textarea id="p_b"></textarea>
+ <p><button id="p_add">Add project</button></p>
+ <label style="display:flex;gap:.6rem;align-items:center"><input type="checkbox" id="taking" style="width:auto"> Now taking projects</label>
+ <p><button id="save">Save & publish</button> <span class="ok" id="msg"></span></p></div>
+
+<script type="module">
+import{initializeApp}from"https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import{getAuth,signInWithEmailAndPassword,onAuthStateChanged,signOut}from"https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import{getFirestore,doc,getDoc,setDoc,collection,getDocs}from"https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+const app=initializeApp({apiKey:"AIzaSyAVp_wqzt5gn54Yd0-0hFf7u9GrlTglV_xEIs",authDomain:"spiderweb-d10c7.firebaseapp.com",projectId:"spiderweb-d10c7",storageBucket:"spiderweb-d10c7.firebasestorage.app",messagingSenderId:"341291634792",appId:"1:341291634792:web:25b56a063f24c9b983ebdd"});
+const auth=getAuth(app),db=getFirestore(app),CD=doc(db,'content','site');
+let portfolio=[],taking=true;
+const $=id=>document.getElementById(id);
+onAuthStateChanged(auth,u=>{$('loginBox').classList.toggle('hide',!!u);$('app').classList.toggle('hide',!u);if(u)load();});
+$('go').onclick=async()=>{$('le').textContent='';try{await signInWithEmailAndPassword(auth,$('em').value,$('pw').value);}catch(e){$('le').textContent='Wrong email or password.';}};
+$('out').onclick=()=>signOut(auth);
+async function load(){
+  const s=await getDoc(CD);if(s.exists()){const c=JSON.parse(s.data().json||'{}');portfolio=c.portfolio||[];taking=c.taking!==false;}
+  $('taking').checked=taking;drawPf();
+  const ls=await getDocs(collection(db,'leads'));const arr=[];ls.forEach(d=>arr.push(d.data()));arr.sort((a,b)=>(b.ts||'').localeCompare(a.ts||''));
+  $('leads').innerHTML=arr.length?arr.map(l=>`<div class="lead"><strong>${l.name||''}</strong> · ${l.service||''} · ${l.budget||''}<br><small>${l.contact||''} — ${(l.ts||'').slice(0,10)}</small><br>${(l.message||'').replace(/</g,'&lt;')}</div>`).join(''):'<em style="color:var(--muted)">No leads yet.</em>';
+}
+function drawPf(){$('pflist').innerHTML=portfolio.map((p,i)=>`<div class="pfitem"><span>${p.title} <small style="color:var(--muted)">(${p.cat})</small></span><button data-i="${i}" class="del" style="background:transparent;border-color:var(--line)">✕</button></div>`).join('')||'<em style="color:var(--muted)">Empty — add your first project.</em>';
+  document.querySelectorAll('.del').forEach(b=>b.onclick=()=>{portfolio.splice(+b.dataset.i,1);drawPf();});}
+$('p_add').onclick=()=>{if(!$('p_t').value)return;portfolio.push({title:$('p_t').value,url:$('p_u').value,cat:$('p_c').value,img:$('p_i').value,tags:$('p_g').value.split(',').map(s=>s.trim()).filter(Boolean),blurb:$('p_b').value});['p_t','p_u','p_i','p_g','p_b'].forEach(i=>$(i).value='');drawPf();};
+$('save').onclick=async()=>{taking=$('taking').checked;await setDoc(CD,{json:JSON.stringify({portfolio,taking}),updated:new Date().toISOString()});$('msg').textContent='Published ✔';setTimeout(()=>$('msg').textContent='',2500);};
+</script></body></html>
