@@ -454,7 +454,7 @@
     const fileBtn = document.createElement("button");
     fileBtn.type = "button";
     fileBtn.className = "btn ghost";
-    fileBtn.textContent = "";
+        fileBtn.textContent = "📎";
     fileBtn.title = "Attach a file";
     const fileChip = document.createElement("div");
     fileChip.className = "chat-file-chip hidden";
