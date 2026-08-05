@@ -130,3 +130,315 @@
     if (name === "payments") loadPayments();
     if (name === "chat") enterChat();
   }
+    state.payments = state.payments || [];
+
+  // ============ PAYMENTS ============
+  async function loadPayments() {
+    try {
+      const snap = await paymentsCol().orderBy("createdAt", "desc").get();
+      state.payments = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      renderPayments();
+    } catch (err) {
+      console.error(err);
+      toast("Payments load failed: " + err.message, "err");
+    }
+  }
+
+  function payStatus(p) {
+    const ap = Array.isArray(p.approvals) ? p.approvals : [];
+    const admins = adminEmails3();
+    const hasAdmin = ap.some((s) => admins.has((s.email || "").toLowerCase()));
+    if (ap.length >= 2 && hasAdmin) return { key: "ok", html: '<span class="signed">Authorized</span>' };
+    if (ap.length === 0) return { key: "none", html: '<span class="pending">Awaiting first ink</span>' };
+    if (!hasAdmin) return { key: "needadmin", html: '<span class="pending">Needs admin countersign</span>' };
+    return { key: "needsecond", html: '<span class="pending">Needs second ink</span>' };
+  }
+
+  function renderPayments() {
+    const list = document.getElementById("payList");
+    const empty = document.getElementById("payEmpty");
+    list.innerHTML = "";
+    const pays = state.payments || [];
+    if (!pays.length) { empty.classList.remove("hidden"); return; }
+    empty.classList.add("hidden");
+    const admins = adminEmails3();
+    pays.forEach((p) => {
+      const st = payStatus(p);
+      const ap = Array.isArray(p.approvals) ? p.approvals : [];
+      const row = document.createElement("div");
+      row.className = "task-row";
+      row.innerHTML = `
+        <div class="task-top">
+          <span class="task-title">${escapeHtml(p.title)}</span>
+          ${st.html}
+        </div>
+        <div class="pay-amount">${escapeHtml(Number(p.amount || 0).toLocaleString())} ETB</div>
+        <div class="task-meta">
+          ${p.bank ? `<span>Bank: ${escapeHtml(p.bank)}</span>` : ""}
+          ${p.accountName ? `<span>Acct name: ${escapeHtml(p.accountName)}</span>` : ""}
+          ${p.accountNumber ? `<span>Acct #: ${escapeHtml(p.accountNumber)}</span>` : ""}
+        </div>
+        ${p.note ? `<div class="task-meta">${escapeHtml(p.note)}</div>` : ""}
+        <div class="appr-list">
+          ${ap.map((s) => `<div class="mini-row"><span>${escapeHtml(s.name)} ${admins.has((s.email || "").toLowerCase()) ? '<span class="overdue">Admin</span>' : ""} · ${escapeHtml(s.method === "gesture" ? "drawn" : "one-click")}</span><span class="muted small">${escapeHtml(formatDate(s.signedAt))}</span></div>`).join("") || '<div class="muted small">No inks yet.</div>'}
+        </div>
+        <div class="doc-actions">
+          <button class="btn small" data-act="sign" type="button">Sign / countersign</button>
+          <button class="btn secondary small" data-act="letter" type="button" ${st.key === "ok" ? "" : "disabled"}>Authorization letter</button>
+          ${isAdmin3() ? '<button class="btn ghost small" data-act="del" type="button">Delete</button>' : ""}
+        </div>`;
+      row.querySelector('[data-act="sign"]').addEventListener("click", () => openPaySign(p));
+      row.querySelector('[data-act="letter"]').addEventListener("click", () => openLetter(p));
+      const del = row.querySelector('[data-act="del"]');
+      if (del) del.addEventListener("click", async () => {
+        if (!confirm("Delete this payment authorization?")) return;
+        await paymentsCol().doc(p.id).delete();
+        toast("Payment auth deleted.");
+        loadPayments();
+      });
+      list.appendChild(row);
+    });
+  }
+
+  document.getElementById("newPaymentBtn").addEventListener("click", () => openModal("paymentModal"));
+  document.getElementById("paymentForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    try {
+      await paymentsCol().add({
+        title: document.getElementById("payTitle").value.trim(),
+        amount: parseFloat(document.getElementById("payAmount").value) || 0,
+        bank: document.getElementById("payBank").value.trim(),
+        accountName: document.getElementById("payAccountName").value.trim(),
+        accountNumber: document.getElementById("payAccountNumber").value.trim(),
+        note: document.getElementById("payNote").value.trim(),
+        approvals: [],
+        createdBy: state.user ? state.user.email : "",
+        createdByName: state.profile ? state.profile.name : "",
+        createdAt: new Date().toISOString()
+      });
+      toast("Payment auth created — collect two inks.");
+      closeModal("paymentModal");
+      e.target.reset();
+      loadPayments();
+    } catch (err) { toast("Payment failed: " + err.message, "err"); }
+  });
+
+  // ---- payment sign pad
+  let payTarget = null;
+  let payDrawing = false, payLast = null, payCtx = null, payHasInk = false;
+
+  function openPaySign(p) {
+    payTarget = p.id;
+    document.getElementById("paySignTitle").textContent = p.title || "Sign payment";
+    document.getElementById("paySignName").value = state.profile ? state.profile.name : "";
+    payTabSwitch("one");
+    openModal("paySignModal");
+  }
+
+  function payTabSwitch(which) {
+    const one = which === "one";
+    document.getElementById("payTabOne").classList.toggle("active", one);
+    document.getElementById("payTabDraw").classList.toggle("active", !one);
+    document.getElementById("payOnePane").classList.toggle("hidden", !one);
+    document.getElementById("payDrawPane").classList.toggle("hidden", one);
+    if (!one) requestAnimationFrame(payResize);
+  }
+  document.getElementById("payTabOne").addEventListener("click", () => payTabSwitch("one"));
+  document.getElementById("payTabDraw").addEventListener("click", () => payTabSwitch("draw"));
+
+  function payResize() {
+    const canvas = document.getElementById("payCanvas");
+    const rect = canvas.parentElement.getBoundingClientRect();
+    if (!rect.width) return;
+    const ratio = Math.max(window.devicePixelRatio || 1, 1);
+    canvas.width = Math.floor(rect.width * ratio);
+    canvas.height = Math.floor(220 * ratio);
+    canvas.style.height = "220px";
+    payCtx = canvas.getContext("2d");
+    payCtx.setTransform(ratio, 0, 0, ratio, 0, 0);
+    payCtx.clearRect(0, 0, canvas.width, canvas.height);
+    payCtx.lineWidth = 3; payCtx.lineCap = "round"; payCtx.lineJoin = "round";
+    payCtx.strokeStyle = "#22080d";
+    payHasInk = false;
+  }
+  function payPos(e) {
+    const rect = document.getElementById("payCanvas").getBoundingClientRect();
+    const cx = e.touches && e.touches[0] ? e.touches[0].clientX : e.clientX;
+    const cy = e.touches && e.touches[0] ? e.touches[0].clientY : e.clientY;
+    return { x: cx - rect.left, y: cy - rect.top };
+  }
+  const payCanvasEl = document.getElementById("payCanvas");
+  payCanvasEl.addEventListener("pointerdown", (e) => { e.preventDefault(); payDrawing = true; payHasInk = true; payLast = payPos(e); });
+  payCanvasEl.addEventListener("pointermove", (e) => {
+    if (!payDrawing || !payCtx) return;
+    e.preventDefault();
+    const p = payPos(e);
+    payCtx.beginPath(); payCtx.moveTo(payLast.x, payLast.y); payCtx.lineTo(p.x, p.y); payCtx.stroke();
+    payLast = p;
+  });
+  ["pointerup", "pointercancel"].forEach((ev) => window.addEventListener(ev, () => { payDrawing = false; }));
+  document.getElementById("payClearBtn").addEventListener("click", () => {
+    const canvas = document.getElementById("payCanvas");
+    if (!payCtx) return;
+    payCtx.save(); payCtx.setTransform(1, 0, 0, 1, 0, 0); payCtx.clearRect(0, 0, canvas.width, canvas.height); payCtx.restore();
+    payHasInk = false;
+  });
+
+  function typedInk3(name) {
+    const c = document.createElement("canvas");
+    c.width = 620; c.height = 150;
+    const ctx = c.getContext("2d");
+    ctx.clearRect(0, 0, c.width, c.height);
+    ctx.fillStyle = "#22080d";
+    ctx.font = 'italic 64px "Segoe Script","Brush Script MT","Comic Sans MS",cursive';
+    ctx.textBaseline = "middle";
+    ctx.fillText(name, 24, 78, 580);
+    return c.toDataURL("image/png");
+  }
+
+  async function addPayApproval(sig) {
+    if (!payTarget) return;
+    await paymentsCol().doc(payTarget).update({ approvals: firebase.firestore.FieldValue.arrayUnion(sig) });
+    toast("Ink recorded.");
+    closeModal("paySignModal");
+    loadPayments();
+  }
+
+  function payGuard(name) {
+    const p = (state.payments || []).find((x) => x.id === payTarget);
+    if (!p) return "Payment not found.";
+    const mine = (state.user.email || "").toLowerCase();
+    if ((p.approvals || []).some((s) => (s.email || "").toLowerCase() === mine)) return "You already inked this payment.";
+    if (!name) return "Enter signer name first.";
+    return null;
+  }
+
+  document.getElementById("payOneBtn").addEventListener("click", async () => {
+    const name = document.getElementById("paySignName").value.trim();
+    const bad = payGuard(name);
+    if (bad) { toast(bad, "err"); return; }
+    await addPayApproval({
+      name, email: state.user.email || "", uid: state.user.uid || "",
+      method: "one-click", device: (navigator.userAgent || "") + " · " + new Date().toLocaleString(),
+      signedAt: new Date().toISOString(), ink: typedInk3(name)
+    });
+  });
+
+  document.getElementById("payDrawSignBtn").addEventListener("click", async () => {
+    const name = document.getElementById("paySignName").value.trim();
+    const bad = payGuard(name);
+    if (bad) { toast(bad, "err"); return; }
+    if (!payHasInk) { toast("Draw a signature first.", "err"); return; }
+    await addPayApproval({
+      name, email: state.user.email || "", uid: state.user.uid || "",
+      method: "gesture", device: (navigator.userAgent || "") + " · " + new Date().toLocaleString(),
+      signedAt: new Date().toISOString(), ink: document.getElementById("payCanvas").toDataURL("image/png")
+    });
+  });
+
+  // ---- printable authorization letter
+  function openLetter(p) {
+    const admins = adminEmails3();
+    const ap = Array.isArray(p.approvals) ? p.approvals : [];
+    const html = `<!doctype html><html><head><meta charset="utf-8"><title>Payment Authorization — ${escapeHtml(p.title)}</title></head>
+    <body style="font-family:Segoe UI,Arial,sans-serif;background:#f7eef0;color:#22080d;margin:0;padding:40px">
+      <div style="max-width:720px;margin:0 auto;background:#fff;border:3px solid #e6242e;border-radius:16px;padding:36px">
+        <h1 style="margin:0;font-size:26px">SPIDERWEB DIGITAL SOLUTIONS</h1>
+        <p style="margin:4px 0 24px;color:#8f1220;letter-spacing:.12em;text-transform:uppercase;font-size:12px">Payment Authorization Letter</p>
+        <h2 style="margin:0 0 8px">${escapeHtml(p.title)}</h2>
+        <p style="font-size:34px;margin:8px 0"><strong>${escapeHtml(Number(p.amount || 0).toLocaleString())} ETB</strong></p>
+        <table style="width:100%;border-collapse:collapse;font-size:14px">
+          ${p.bank ? `<tr><td style="padding:6px 0;color:#8f1220">Bank</td><td>${escapeHtml(p.bank)}</td></tr>` : ""}
+          ${p.accountName ? `<tr><td style="padding:6px 0;color:#8f1220">Account name</td><td>${escapeHtml(p.accountName)}</td></tr>` : ""}
+          ${p.accountNumber ? `<tr><td style="padding:6px 0;color:#8f1220">Account number</td><td>${escapeHtml(p.accountNumber)}</td></tr>` : ""}
+          <tr><td style="padding:6px 0;color:#8f1220">Created</td><td>${escapeHtml(formatDate(p.createdAt))} by ${escapeHtml(p.createdByName || p.createdBy || "")}</td></tr>
+        </table>
+        ${p.note ? `<p style="background:#f7eef0;border-radius:10px;padding:12px">${escapeHtml(p.note)}</p>` : ""}
+        <h3 style="margin:24px 0 12px">Authorizations (${ap.length})</h3>
+        ${ap.map((s) => `
+          <div style="display:flex;align-items:center;gap:16px;border-top:1px dashed #e6242e;padding:12px 0">
+            ${s.ink ? `<img src="${s.ink}" style="height:52px" alt="signature">` : ""}
+            <div>
+              <strong>${escapeHtml(s.name)}</strong> ${admins.has((s.email || "").toLowerCase()) ? '<span style="color:#e6242e;font-weight:700">— ADMIN COUNTERSIGN</span>' : ""}
+              <div style="font-size:12px;color:#666">${escapeHtml(formatDate(s.signedAt))} · ${escapeHtml(s.method === "gesture" ? "drawn signature" : "one-click signature")}</div>
+              <div style="font-size:11px;color:#999">${escapeHtml(s.device || "")}</div>
+            </div>
+          </div>`).join("")}
+        <p style="margin-top:28px;font-size:12px;color:#666">Recorded in Spiderweb Studio OS with two-ink approval including an admin countersign. Verify against the system record if needed.</p>
+      </div>
+    </body></html>`;
+    const blob = new Blob([html], { type: "text/html" });
+    const url = URL.createObjectURL(blob);
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+    window.open(url, "_blank", "noopener");
+    toast("Authorization letter opened — print or save as PDF.");
+  }
+    // ============ CREW CHAT ============
+  let chatRoom = null;
+  let chatUnsub = null;
+
+  function roomList3() {
+    const rooms = [{ id: "crew", name: "# crew — all hands" }];
+    (state.customers || []).forEach((c) => rooms.push({ id: "cust-" + c.id, name: "# " + (c.name || "customer") }));
+    return rooms;
+  }
+
+  async function enterChat() {
+    if (window.D2) { try { await D2.loadCustomers(); } catch (e) {} }
+    renderRooms();
+    if (!chatRoom) setRoom("crew");
+  }
+
+  function renderRooms() {
+    const wrap = document.getElementById("roomList");
+    wrap.innerHTML = "";
+    roomList3().forEach((r) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "room-btn" + (chatRoom === r.id ? " active" : "");
+      b.textContent = r.name;
+      b.addEventListener("click", () => setRoom(r.id));
+      wrap.appendChild(b);
+    });
+  }
+
+  function setRoom(id) {
+    chatRoom = id;
+    renderRooms();
+    if (chatUnsub) { chatUnsub(); chatUnsub = null; }
+    chatUnsub = db.collection("c").doc("chat").collection(id)
+      .orderBy("at", "asc")
+      .onSnapshot((snap) => {
+        const box = document.getElementById("chatMsgs");
+        box.innerHTML = "";
+        snap.forEach((d) => {
+          const m = d.data();
+          const div = document.createElement("div");
+          div.className = "msg" + (m.uid === state.user.uid ? " me" : "");
+          div.innerHTML = `${escapeHtml(m.text)}<small>${escapeHtml(m.byName || m.by || "")} · ${escapeHtml(formatDate(m.at))}</small>`;
+          box.appendChild(div);
+        });
+        box.scrollTop = box.scrollHeight;
+      }, (err) => { console.error(err); toast("Chat error: " + err.message, "err"); });
+  }
+
+  document.getElementById("chatForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const input = document.getElementById("chatText");
+    const text = input.value.trim();
+    if (!text || !chatRoom) return;
+    input.value = "";
+    try {
+      await db.collection("c").doc("chat").collection(chatRoom).add({
+        text,
+        by: state.user.email || "",
+        byName: state.profile ? state.profile.name : "",
+        uid: state.user.uid,
+        at: new Date().toISOString()
+      });
+    } catch (err) { toast("Send failed: " + err.message, "err"); }
+  });
+
+  console.log("SPIDERWEB Drop 3 loaded.");
+})();
+/* SPIDERWEB-DROP3-END */
