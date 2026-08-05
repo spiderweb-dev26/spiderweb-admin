@@ -442,6 +442,7 @@
           ${u.status !== "approved" ? '<button class="btn small" data-act="approve" type="button">Approve</button>' : ""}
           ${u.status !== "blocked" ? '<button class="btn ghost small" data-act="block" type="button">Block</button>' : ""}
           <button class="btn secondary small" data-act="role" type="button">${u.role === "admin" ? "Make staff" : "Make admin"}</button>
+                    <button class="btn ghost small" data-act="remove" type="button">Remove</button>
         </div>` : (protectedRow ? '<div class="task-meta">Owner account — protected.</div>' : "")}`;
       if (isAdmin() && !protectedRow) {
         const ap = row.querySelector('[data-act="approve"]');
@@ -462,6 +463,12 @@
           if (toAdmin && !confirm(`Make ${u.email} an ADMIN? Admins can manage everything.`)) return;
           await usersCol().doc(u.id).update({ role: toAdmin ? "admin" : "staff" });
           toast(toAdmin ? "Promoted to admin." : "Moved to staff.");
+          loadUsers();
+        });
+                row.querySelector('[data-act="remove"]').addEventListener("click", async () => {
+          if (!confirm(`Remove ${u.email}? They will return to the pending screen on next login.`)) return;
+          await usersCol().doc(u.id).delete();
+          toast(`${u.email} removed from the web.`);
           loadUsers();
         });
       }
