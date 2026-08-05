@@ -439,6 +439,139 @@
     } catch (err) { toast("Send failed: " + err.message, "err"); }
   });
 
+    // ============ CHAT v2: edit, delete, files ============
+  (function () {
+    const css = document.createElement("style");
+    css.textContent = `.msg-actions{display:flex;gap:6px;margin-top:6px}.msg-btn{border:1px solid var(--line);background:rgba(18,6,9,.4);border-radius:8px;padding:2px 8px;font-size:.8rem;color:var(--mut)}.msg-btn:hover{color:var(--ink)}.edit-wrap{display:grid;gap:8px}.edit-input{width:100%;padding:10px 12px;border-radius:12px;border:2px solid rgba(230,36,46,.22);background:rgba(18,6,9,.62);color:var(--ink);outline:none}.chat-file-chip{display:flex;align-items:center;gap:8px;margin-top:8px;padding:8px 10px;border-radius:12px;border:1px dashed var(--line);color:var(--mut);font-size:.85rem}`;
+    document.head.appendChild(css);
+
+    const oldForm = document.getElementById("chatForm");
+    const form = oldForm.cloneNode(true);
+    oldForm.parentNode.replaceChild(form, oldForm);
+    const fileInput = document.createElement("input");
+    fileInput.type = "file";
+    fileInput.hidden = true;
+    const fileBtn = document.createElement("button");
+    fileBtn.type = "button";
+    fileBtn.className = "btn ghost";
+    fileBtn.textContent = "";
+    fileBtn.title = "Attach a file";
+    const fileChip = document.createElement("div");
+    fileChip.className = "chat-file-chip hidden";
+    const sendBtn = form.querySelector("button[type='submit']");
+    form.insertBefore(fileInput, form.firstChild);
+    form.insertBefore(fileBtn, sendBtn);
+    form.appendChild(fileChip);
+    let pendingFile = null;
+    fileBtn.addEventListener("click", () => fileInput.click());
+    fileInput.addEventListener("change", () => {
+      pendingFile = fileInput.files && fileInput.files[0] ? fileInput.files[0] : null;
+      if (pendingFile) { fileChip.classList.remove("hidden"); fileChip.textContent = "📎 " + pendingFile.name + " (" + formatBytes(pendingFile.size) + ")"; }
+      else fileChip.classList.add("hidden");
+    });
+
+    function chatCol(room) { return db.collection("c").doc("chat").collection(room); }
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const input = document.getElementById("chatText");
+      const text = input.value.trim();
+      if ((!text && !pendingFile) || !chatRoom) return;
+      input.value = "";
+      const file = pendingFile;
+      pendingFile = null;
+      fileInput.value = "";
+      fileChip.classList.add("hidden");
+      try {
+        let fileMeta = {};
+        if (file) {
+          if (file.size > 25 * 1024 * 1024) { toast("Max 25 MB per file.", "err"); return; }
+          const safe = file.name.replace(/[^\w.\-]+/g, "-");
+          const path = "chat/" + state.user.uid + "/" + Date.now() + "-" + safe;
+          const up = await supabaseClient.storage.from(SUPABASE_BUCKET).upload(path, file, { cacheControl: "3600", upsert: false });
+          if (up.error) throw up.error;
+          const pub = supabaseClient.storage.from(SUPABASE_BUCKET).getPublicUrl(path);
+          fileMeta = { fileUrl: pub.data.publicUrl, fileName: file.name, fileType: file.type || "application/octet-stream", fileSize: file.size };
+        }
+        await chatCol(chatRoom).add(Object.assign({
+          text: text,
+          by: state.user.email || "",
+          byName: state.profile ? state.profile.name : "",
+          uid: state.user.uid,
+          at: new Date().toISOString()
+        }, fileMeta));
+      } catch (err) { console.error(err); toast("Send failed: " + err.message, "err"); }
+    });
+
+    function richRender(snap) {
+      const box = document.getElementById("chatMsgs");
+      box.innerHTML = "";
+      snap.forEach((d) => {
+        const m = d.data();
+        const mine = m.uid === state.user.uid;
+        const div = document.createElement("div");
+        div.className = "msg" + (mine ? " me" : "");
+        let html = "";
+        if (m.fileUrl) {
+          html += (m.fileType || "").startsWith("image/")
+            ? `<a href="${escapeHtml(m.fileUrl)}" target="_blank" rel="noopener"><img src="${escapeHtml(m.fileUrl)}" style="max-width:220px;max-height:160px;border-radius:10px;display:block;margin-bottom:6px" alt=""></a>`
+            : `<a class="link" href="${escapeHtml(m.fileUrl)}" target="_blank" rel="noopener">📎 ${escapeHtml(m.fileName || "file")}</a>`;
+        }
+        if (m.text) html += escapeHtml(m.text);
+        html += `<small>${escapeHtml(m.byName || m.by || "")} · ${escapeHtml(formatDate(m.at))}${m.editedAt ? " · edited" : ""}</small>`;
+        div.innerHTML = html;
+        if (mine || isAdmin3()) {
+          const bar = document.createElement("div");
+          bar.className = "msg-actions";
+          if (mine) bar.innerHTML += '<button class="msg-btn" type="button" data-m="edit">✎ edit</button>';
+          bar.innerHTML += '<button class="msg-btn" type="button" data-m="del">🗑 delete</button>';
+          div.appendChild(bar);
+          const ed = bar.querySelector('[data-m="edit"]');
+          if (ed) ed.addEventListener("click", () => startEdit(d.id, m, div));
+          bar.querySelector('[data-m="del"]').addEventListener("click", async () => {
+            if (!confirm("Delete this message for everyone?")) return;
+            await chatCol(chatRoom).doc(d.id).delete();
+            toast("Message deleted.");
+          });
+        }
+        box.appendChild(div);
+      });
+      box.scrollTop = box.scrollHeight;
+    }
+
+    function startEdit(msgId, m, div) {
+      const wrap = document.createElement("div");
+      wrap.className = "edit-wrap";
+      const input = document.createElement("input");
+      input.className = "edit-input";
+      input.value = m.text || "";
+      const save = document.createElement("button");
+      save.type = "button"; save.className = "btn small"; save.textContent = "Save";
+      const cancel = document.createElement("button");
+      cancel.type = "button"; cancel.className = "btn ghost small"; cancel.textContent = "Cancel";
+      wrap.appendChild(input); wrap.appendChild(save); wrap.appendChild(cancel);
+      div.innerHTML = "";
+      div.appendChild(wrap);
+      save.addEventListener("click", async () => {
+        const t = input.value.trim();
+        if (!t) { toast("Message can't be empty.", "err"); return; }
+        await chatCol(chatRoom).doc(msgId).update({ text: t, editedAt: new Date().toISOString() });
+        toast("Message updated.");
+      });
+      cancel.addEventListener("click", () => { if (chatRoom) setRoom(chatRoom); });
+    }
+
+    let richUnsub = null;
+    function followRoom() {
+      if (richUnsub) { richUnsub(); richUnsub = null; }
+      if (!chatRoom) return;
+      richUnsub = chatCol(chatRoom).orderBy("at", "asc").onSnapshot(richRender, (err) => console.error(err));
+    }
+    document.getElementById("roomList").addEventListener("click", () => setTimeout(followRoom, 0));
+    const chatNav = Array.from(document.querySelectorAll(".nav-item")).find((b) => b.dataset.view === "chat");
+    if (chatNav) chatNav.addEventListener("click", () => setTimeout(followRoom, 50));
+    setTimeout(followRoom, 0);
+  })();
   console.log("SPIDERWEB Drop 3 loaded.");
 })();
 /* SPIDERWEB-DROP3-END */
