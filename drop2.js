@@ -520,6 +520,13 @@
     wrap.appendChild(right);
   }
 
+    document.addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-close]");
+    if (btn) closeModal(btn.getAttribute("data-close"));
+  });
+  window.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") ["taskModal", "customerModal", "attachModal"].forEach((id) => closeModal(id));
+  });
   console.log("SPIDERWEB Drop 2 loaded.");
 })();
 /* SPIDERWEB-DROP2-END */
