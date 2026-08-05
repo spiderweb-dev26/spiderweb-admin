@@ -689,6 +689,7 @@
     const docsBtn = navButtons.find((b) => b.dataset.view === "documents");
     if (dashBtn && docsBtn) docsBtn.parentNode.insertBefore(dashBtn, docsBtn);
   })();
+    window.D2 = { switchView, loadTasks, loadCustomers, loadUsers, loadDashboard };
   console.log("SPIDERWEB Drop 2 loaded.");
 })();
 /* SPIDERWEB-DROP2-END */
