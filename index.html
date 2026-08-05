@@ -4,916 +4,173 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Spiderweb Studio OS — Admin</title>
-  <meta name="description" content="Spiderweb Digital Solutions back office." />
-
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Bangers&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet" />
-
   <style>
-    :root {
-      --bg: #120609;
-      --bg2: #1b0b10;
-      --panel: #231017;
-      --line: rgba(230, 36, 46, .18);
-      --red: #e6242e;
-      --deep: #8f1220;
-      --blue: #3d7bff;
-      --green: #7dffa0;
-      --ink: #f7eef0;
-      --mut: #c2a9ae;
-
-      --font-display: "Bangers", cursive;
-      --font-body: "Space Grotesk", sans-serif;
-
-      --shadow: 4px 4px 0 rgba(0, 0, 0, .72);
-      --shadow-soft: 3px 3px 0 rgba(0, 0, 0, .48);
-      --radius: 18px;
-      --radius-sm: 12px;
-    }
-
-    * { box-sizing: border-box; }
-
-    html, body {
-      margin: 0;
-      min-height: 100%;
-      background: var(--bg);
-      color: var(--ink);
-      font-family: var(--font-body);
-    }
-
-    body {
-      position: relative;
-      overflow-x: hidden;
-    }
-
-    /* Red lattice comic background */
-    body::before {
-      content: "";
-      position: fixed;
-      inset: 0;
-      z-index: -2;
-      pointer-events: none;
-      background-color: var(--bg);
-      background-image:
-        radial-gradient(circle at 20% 15%, rgba(230, 36, 46, .14), transparent 32%),
-        radial-gradient(circle at 82% 80%, rgba(61, 123, 255, .08), transparent 28%),
-        url("data:image/svg+xml,%3Csvg width='72' height='72' viewBox='0 0 72 72' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' stroke='%23e6242e' stroke-opacity='0.12'%3E%3Cpath d='M0 36h72M36 0v72M0 0l72 72M72 0L0 72'/%3E%3C/g%3E%3Ccircle cx='36' cy='36' r='2.5' fill='%23e6242e' fill-opacity='0.16'/%3E%3C/svg%3E");
-      background-size: cover, cover, 72px 72px;
-    }
-
-    body::after {
-      content: "";
-      position: fixed;
-      inset: 0;
-      z-index: -1;
-      pointer-events: none;
-      background:
-        linear-gradient(180deg, rgba(18, 6, 9, .18), rgba(18, 6, 9, .74));
-    }
-
-    button, input, textarea, select {
-      font: inherit;
-      color: inherit;
-    }
-
-    button { cursor: pointer; }
-
-    .hidden { display: none !important; }
-
-    .app {
-      min-height: 100vh;
-      display: grid;
-      grid-template-rows: auto 1fr;
-    }
-
-    .topbar {
-      position: sticky;
-      top: 0;
-      z-index: 50;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 16px;
-      padding: 14px 20px;
-      border-bottom: 2px dashed var(--line);
-      background: rgba(18, 6, 9, .86);
-      backdrop-filter: blur(12px);
-    }
-
-    .brand {
-      display: flex;
-      align-items: center;
-      gap: 14px;
-      min-width: 0;
-    }
-
-    .brand-badge {
-      width: 52px;
-      height: 52px;
-      flex: 0 0 auto;
-      display: grid;
-      place-items: center;
-      border: 2px solid rgba(230, 36, 46, .36);
-      border-radius: 16px;
-      background:
-        radial-gradient(circle at 25% 20%, rgba(230, 36, 46, .34), transparent 42%),
-        linear-gradient(145deg, var(--panel), var(--bg2));
-      box-shadow: var(--shadow);
-      transform: rotate(-2deg);
-    }
-
-    .brand-badge svg { display: block; }
-
-    .brand-copy {
-      min-width: 0;
-    }
-
-    .brand-copy h1 {
-      margin: 0;
-      font-family: var(--font-display);
-      font-size: clamp(1.55rem, 3vw, 2.25rem);
-      letter-spacing: .045em;
-      color: var(--ink);
-      text-shadow: 3px 3px 0 rgba(0, 0, 0, .66);
-      line-height: .95;
-    }
-
-    .brand-copy h1 span { color: var(--red); }
-
-    .brand-copy p {
-      margin: 4px 0 0;
-      font-size: .82rem;
-      color: var(--mut);
-      letter-spacing: .14em;
-      text-transform: uppercase;
-    }
-
-    .top-actions {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      flex-wrap: wrap;
-      justify-content: flex-end;
-    }
-
-    .user-chip {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      padding: 8px 12px;
-      border: 2px solid var(--line);
-      border-radius: 999px;
-      background: rgba(27, 11, 16, .82);
-      box-shadow: var(--shadow-soft);
-      max-width: min(360px, calc(100vw - 180px));
-    }
-
-    .user-chip .avatar {
-      width: 34px;
-      height: 34px;
-      flex: 0 0 auto;
-      display: grid;
-      place-items: center;
-      border-radius: 999px;
-      background: linear-gradient(135deg, var(--red), var(--deep));
-      color: #fff;
-      font-weight: 700;
-      box-shadow: var(--shadow-soft);
-    }
-
-    .user-chip .who {
-      min-width: 0;
-      line-height: 1.08;
-    }
-
-    .user-chip .who strong {
-      display: block;
-      font-size: .92rem;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-
-    .user-chip .who small {
-      color: var(--mut);
-      font-size: .74rem;
-      text-transform: uppercase;
-      letter-spacing: .12em;
-    }
-
-    .btn {
-      appearance: none;
-      border: 2px solid rgba(230, 36, 46, .26);
-      border-radius: 14px;
-      padding: 12px 18px;
-      background: linear-gradient(135deg, var(--red), var(--deep));
-      color: #fff;
-      font-family: var(--font-display);
-      font-size: 1rem;
-      letter-spacing: .08em;
-      text-transform: uppercase;
-      box-shadow: var(--shadow);
-      transition: transform .16s ease, box-shadow .16s ease, opacity .16s ease;
-      text-align: center;
-    }
-
-    .btn:hover {
-      transform: translate(-2px, -2px);
-      box-shadow: 6px 6px 0 rgba(0, 0, 0, .72);
-    }
-
-    .btn:active {
-      transform: translate(0, 0);
-      box-shadow: var(--shadow-soft);
-    }
-
-    .btn:disabled {
-      opacity: .55;
-      cursor: not-allowed;
-      transform: none;
-    }
-
-    .btn.secondary {
-      background: linear-gradient(135deg, rgba(61, 123, 255, .96), #1c3f8f);
-      border-color: rgba(61, 123, 255, .38);
-    }
-
-    .btn.ghost {
-      background: rgba(27, 11, 16, .72);
-      border: 2px dashed var(--line);
-      color: var(--ink);
-    }
-
-    .btn.small {
-      padding: 9px 13px;
-      font-size: .86rem;
-      border-radius: 12px;
-    }
-
-    .layout {
-      display: grid;
-      grid-template-columns: 250px minmax(0, 1fr);
-      gap: 20px;
-      padding: 20px;
-      align-items: start;
-    }
-
-    .side {
-      position: sticky;
-      top: 92px;
-      display: grid;
-      gap: 14px;
-    }
-
-    .panel {
-      background: linear-gradient(180deg, rgba(35, 16, 23, .96), rgba(27, 11, 16, .96));
-      border: 2px solid var(--line);
-      border-radius: var(--radius);
-      box-shadow: var(--shadow);
-    }
-
-    .nav {
-      padding: 14px;
-      display: grid;
-      gap: 8px;
-    }
-
-    .nav-title {
-      margin: 0;
-      font-family: var(--font-display);
-      font-size: 1.05rem;
-      letter-spacing: .1em;
-      color: var(--mut);
-      text-transform: uppercase;
-    }
-
-    .nav-item {
-      width: 100%;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 10px;
-      padding: 12px 13px;
-      border-radius: 14px;
-      border: 2px solid transparent;
-      background: rgba(18, 6, 9, .35);
-      color: var(--ink);
-      font-weight: 700;
-      text-align: left;
-      transition: transform .16s ease, border-color .16s ease, background .16s ease;
-    }
-
-    .nav-item:hover {
-      transform: translateX(2px);
-      border-color: rgba(230, 36, 46, .24);
-    }
-
-    .nav-item.active {
-      background: linear-gradient(135deg, rgba(230, 36, 46, .18), rgba(143, 18, 32, .28));
-      border-color: rgba(230, 36, 46, .42);
-      box-shadow: var(--shadow-soft);
-    }
-
-    .nav-item .state {
-      font-size: .7rem;
-      padding: 4px 7px;
-      border-radius: 999px;
-      border: 1px solid var(--line);
-      color: var(--mut);
-      text-transform: uppercase;
-      letter-spacing: .08em;
-      background: rgba(18, 6, 9, .5);
-      white-space: nowrap;
-    }
-
-    .nav-item.locked {
-      opacity: .56;
-      cursor: not-allowed;
-    }
-
-    .main {
-      display: grid;
-      gap: 18px;
-      min-width: 0;
-    }
-
-    .page-head {
-      display: flex;
-      align-items: flex-end;
-      justify-content: space-between;
-      gap: 16px;
-      padding: 18px;
-    }
-
-    .page-head h2 {
-      margin: 0;
-      font-family: var(--font-display);
-      font-size: clamp(1.7rem, 3vw, 2.4rem);
-      letter-spacing: .05em;
-      color: var(--ink);
-      text-shadow: 3px 3px 0 rgba(0, 0, 0, .64);
-    }
-
-    .page-head p {
-      margin: 7px 0 0;
-      color: var(--mut);
-      max-width: 70ch;
-    }
-
-    .toolbar {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 14px;
-      flex-wrap: wrap;
-      padding: 14px 18px;
-      border-top: 2px dashed var(--line);
-      border-bottom: 2px dashed var(--line);
-      background: rgba(18, 6, 9, .28);
-    }
-
-    .toolbar .left,
-    .toolbar .right {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      flex-wrap: wrap;
-    }
-
-    .search {
-      position: relative;
-      min-width: min(320px, 100%);
-    }
-
-    .search input {
-      width: 100%;
-      padding: 12px 14px 12px 40px;
-      border-radius: 13px;
-      border: 2px solid rgba(230, 36, 46, .22);
-      background: rgba(18, 6, 9, .65);
-      color: var(--ink);
-      outline: none;
-    }
-
-    .search input::placeholder { color: #987d84; }
-
-    .search svg {
-      position: absolute;
-      left: 12px;
-      top: 50%;
-      transform: translateY(-50%);
-      opacity: .82;
-      pointer-events: none;
-    }
-
-    .content {
-      padding: 18px;
-      display: grid;
-      gap: 16px;
-    }
-
-    .empty, .pending, .overdue, .signed {
-      border-radius: calc(var(--radius) - 4px);
-      padding: 12px 14px;
-      font-size: .8rem;
-      font-weight: 800;
-      letter-spacing: .08em;
-      text-transform: uppercase;
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      border: 1px solid transparent;
-    }
-
-    .empty {
-      color: var(--mut);
-      border-color: rgba(194, 169, 174, .28);
-      background: rgba(194, 169, 174, .06);
-    }
-
-    .pending {
-      color: #ffd76e;
-      border-color: rgba(255, 215, 110, .34);
-      background: rgba(255, 215, 110, .08);
-    }
-
-    .overdue {
-      color: #ff8f8f;
-      border-color: rgba(230, 36, 46, .34);
-      background: rgba(230, 36, 46, .10);
-    }
-
-    .signed {
-      color: var(--green);
-      border-color: rgba(125, 255, 160, .34);
-      background: rgba(125, 255, 160, .08);
-    }
-
-    .doc-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-      gap: 16px;
-    }
-
-    .doc-card {
-      display: grid;
-      gap: 12px;
-      padding: 16px;
-      border-radius: var(--radius);
-      border: 2px solid var(--line);
-      background: linear-gradient(180deg, rgba(35, 16, 23, .96), rgba(27, 11, 16, .96));
-      box-shadow: var(--shadow);
-      transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
-      min-width: 0;
-    }
-
-    .doc-card:hover {
-      transform: translate(-3px, -3px);
-      box-shadow: 7px 7px 0 rgba(0, 0, 0, .72);
-      border-color: rgba(230, 36, 46, .34);
-    }
-
-    .doc-top {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 10px;
-    }
-
-    .doc-type {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      min-width: 0;
-      color: var(--mut);
-      font-size: .82rem;
-      letter-spacing: .08em;
-      text-transform: uppercase;
-    }
-
-    .doc-title {
-      margin: 0;
-      font-size: 1.08rem;
-      line-height: 1.28;
-      overflow-wrap: anywhere;
-    }
-
-    .doc-meta {
-      display: grid;
-      gap: 4px;
-      color: var(--mut);
-      font-size: .88rem;
-      overflow-wrap: anywhere;
-    }
-
-    .doc-actions {
-      display: flex;
-      gap: 10px;
-      flex-wrap: wrap;
-      margin-top: 4px;
-    }
-
-    .divider {
-      height: 0;
-      border-top: 2px dashed var(--line);
-      margin: 2px 0;
-    }
-
-    .empty-state {
-      padding: 34px 22px;
-      display: grid;
-      place-items: center;
-      gap: 14px;
-      text-align: center;
-      border: 2px dashed rgba(230, 36, 46, .28);
-      border-radius: var(--radius);
-      background: rgba(18, 6, 9, .3);
-    }
-
-    .empty-state h3 {
-      margin: 0;
-      font-family: var(--font-display);
-      font-size: clamp(1.5rem, 3vw, 2rem);
-      letter-spacing: .05em;
-    }
-
-    .empty-state p {
-      margin: 0;
-      color: var(--mut);
-      max-width: 64ch;
-    }
-
-    .modal {
-      position: fixed;
-      inset: 0;
-      z-index: 100;
-      display: grid;
-      place-items: center;
-      padding: 20px;
-      background: rgba(8, 3, 5, .76);
-      backdrop-filter: blur(8px);
-    }
-
-    .modal-box {
-      width: min(760px, 100%);
-      max-height: min(86vh, 920px);
-      overflow: auto;
-      padding: 18px;
-    }
-
-    .modal-head {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 14px;
-      margin-bottom: 12px;
-    }
-
-    .modal-head h3 {
-      margin: 0;
-      font-family: var(--font-display);
-      font-size: clamp(1.35rem, 3vw, 1.9rem);
-      letter-spacing: .05em;
-    }
-
-    .icon-btn {
-      width: 42px;
-      height: 42px;
-      display: grid;
-      place-items: center;
-      border-radius: 12px;
-      border: 2px solid var(--line);
-      background: rgba(18, 6, 9, .55);
-      color: var(--ink);
-      box-shadow: var(--shadow-soft);
-    }
-
-    .icon-btn:hover { transform: translate(-1px, -1px); }
-
-    .field {
-      display: grid;
-      gap: 8px;
-      margin-bottom: 14px;
-    }
-
-    .field label {
-      font-size: .86rem;
-      color: var(--mut);
-      letter-spacing: .08em;
-      text-transform: uppercase;
-    }
-
-    .field input,
-    .field textarea {
-      width: 100%;
-      padding: 13px 14px;
-      border-radius: 14px;
-      border: 2px solid rgba(230, 36, 46, .22);
-      background: rgba(18, 6, 9, .62);
-      color: var(--ink);
-      outline: none;
-    }
-
-    .field input:focus,
-    .field textarea:focus {
-      border-color: rgba(230, 36, 46, .52);
-      box-shadow: 0 0 0 3px rgba(230, 36, 46, .12);
-    }
-
-    .upload-drop {
-      display: grid;
-      place-items: center;
-      gap: 10px;
-      padding: 28px 18px;
-      border: 3px dashed rgba(230, 36, 46, .32);
-      border-radius: 18px;
-      background: rgba(18, 6, 9, .34);
-      text-align: center;
-      cursor: pointer;
-      transition: transform .16s ease, border-color .16s ease, background .16s ease;
-    }
-
-    .upload-drop:hover,
-    .upload-drop.drag {
-      transform: translateY(-2px);
-      border-color: rgba(230, 36, 46, .56);
-      background: rgba(230, 36, 46, .07);
-    }
-
-    .upload-drop strong {
-      font-family: var(--font-display);
-      font-size: 1.2rem;
-      letter-spacing: .06em;
-    }
-
-    .upload-drop small {
-      color: var(--mut);
-    }
-
-    .file-list {
-      display: grid;
-      gap: 10px;
-      margin-top: 14px;
-    }
-
-    .file-row {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 12px;
-      padding: 11px 12px;
-      border-radius: 14px;
-      border: 2px solid rgba(230, 36, 46, .18);
-      background: rgba(18, 6, 9, .35);
-      overflow-wrap: anywhere;
-    }
-
-    .sign-tabs {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 10px;
-      margin: 12px 0 16px;
-    }
-
-    .sign-tab {
-      padding: 12px 14px;
-      border-radius: 14px;
-      border: 2px solid rgba(230, 36, 46, .2);
-      background: rgba(18, 6, 9, .4);
-      color: var(--mut);
-      font-weight: 800;
-      letter-spacing: .03em;
-    }
-
-    .sign-tab.active {
-      color: #fff;
-      background: linear-gradient(135deg, rgba(230, 36, 46, .24), rgba(143, 18, 32, .36));
-      border-color: rgba(230, 36, 46, .5);
-      box-shadow: var(--shadow-soft);
-    }
-
-    .sign-pad {
-      display: grid;
-      gap: 12px;
-    }
-
-    .canvas-wrap {
-      position: relative;
-      border: 3px dashed rgba(230, 36, 46, .3);
-      border-radius: 18px;
-      overflow: hidden;
-      background:
-        linear-gradient(180deg, rgba(247, 238, 240, .98), rgba(247, 238, 240, .94));
-      min-height: 240px;
-    }
-
-    .canvas-wrap canvas {
-      display: block;
-      width: 100%;
-      height: 240px;
-      touch-action: none;
-      cursor: crosshair;
-    }
-
-    .canvas-hint {
-      position: absolute;
-      inset: auto 0 0 0;
-      padding: 9px 12px;
-      font-size: .78rem;
-      color: #57202a;
-      background: rgba(247, 238, 240, .74);
-      border-top: 1px dashed rgba(143, 18, 32, .16);
-      pointer-events: none;
-    }
-
-    .signature-list {
-      display: grid;
-      gap: 10px;
-      margin-top: 14px;
-    }
-
-    .signature-row {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 12px;
-      padding: 11px 12px;
-      border-radius: 14px;
-      border: 2px solid rgba(125, 255, 160, .16);
-      background: rgba(125, 255, 160, .05);
-      overflow-wrap: anywhere;
-    }
-
-    .signature-row .meta {
-      display: grid;
-      gap: 3px;
-      min-width: 0;
-    }
-
-    .signature-row .meta strong { overflow-wrap: anywhere; }
-
-    .signature-row .meta small {
-      color: var(--mut);
-      overflow-wrap: anywhere;
-    }
-
-    .auth-shell {
-      min-height: 100vh;
-      display: grid;
-      place-items: center;
-      padding: 22px;
-    }
-
-    .auth-card {
-      width: min(460px, 100%);
-      padding: 26px;
-      text-align: center;
-    }
-
-    .auth-card .brand-badge {
-      margin: 0 auto 14px;
-    }
-
-    .auth-card h2 {
-      margin: 0;
-      font-family: var(--font-display);
-      font-size: clamp(2rem, 5vw, 3rem);
-      letter-spacing: .05em;
-      text-shadow: 3px 3px 0 rgba(0, 0, 0, .66);
-    }
-
-    .auth-card h2 span { color: var(--red); }
-
-    .auth-card p {
-      color: var(--mut);
-      margin: 10px 0 22px;
-    }
-
-    .toast {
-      position: fixed;
-      right: 18px;
-      bottom: 18px;
-      z-index: 200;
-      display: grid;
-      gap: 10px;
-      max-width: min(380px, calc(100vw - 36px));
-    }
-
-    .toast-item {
-      padding: 13px 15px;
-      border-radius: 16px;
-      border: 2px solid rgba(230, 36, 46, .3);
-      background: rgba(24, 8, 12, .92);
-      box-shadow: var(--shadow);
-      color: var(--ink);
-      animation: pop .18s ease;
-      overflow-wrap: anywhere;
-    }
-
-    .toast-item.ok { border-color: rgba(125, 255, 160, .34); }
-    .toast-item.err { border-color: rgba(230, 36, 46, .54); }
-
-    @keyframes pop {
-      from { transform: translateY(8px) scale(.98); opacity: 0; }
-      to { transform: translateY(0) scale(1); opacity: 1; }
-    }
-
-    .muted { color: var(--mut); }
-    .small { font-size: .86rem; }
-    .right { margin-left: auto; }
-
-    @media (max-width: 900px) {
-      .layout {
-        grid-template-columns: 1fr;
-      }
-
-      .side {
-        position: static;
-      }
-
-      .topbar {
-        align-items: flex-start;
-      }
-
-      .user-chip {
-        max-width: 100%;
-      }
-    }
+    :root{--bg:#120609;--bg2:#1b0b10;--panel:#231017;--line:rgba(230,36,46,.18);--red:#e6242e;--deep:#8f1220;--blue:#3d7bff;--green:#7dffa0;--ink:#f7eef0;--mut:#c2a9ae;--font-display:"Bangers",cursive;--font-body:"Space Grotesk",sans-serif;--shadow:4px 4px 0 rgba(0,0,0,.72);--shadow-soft:3px 3px 0 rgba(0,0,0,.48);--radius:18px;--radius-sm:12px}
+    *{box-sizing:border-box}
+    html,body{margin:0;min-height:100%;background:var(--bg);color:var(--ink);font-family:var(--font-body)}
+    body{position:relative;overflow-x:hidden}
+    body::before{content:"";position:fixed;inset:0;z-index:-2;pointer-events:none;background-color:var(--bg);background-image:radial-gradient(circle at 20% 15%,rgba(230,36,46,.14),transparent 32%),radial-gradient(circle at 82% 80%,rgba(61,123,255,.08),transparent 28%),url("data:image/svg+xml,%3Csvg width='72' height='72' viewBox='0 0 72 72' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' stroke='%23e6242e' stroke-opacity='0.12'%3E%3Cpath d='M0 36h72M36 0v72M0 0l72 72M72 0L0 72'/%3E%3C/g%3E%3Ccircle cx='36' cy='36' r='2.5' fill='%23e6242e' fill-opacity='0.16'/%3E%3C/svg%3E");background-size:cover,cover,72px 72px}
+    body::after{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;background:linear-gradient(180deg,rgba(18,6,9,.18),rgba(18,6,9,.74))}
+    button,input,textarea,select{font:inherit;color:inherit}
+    button{cursor:pointer}
+    .hidden{display:none!important}
+    .app{min-height:100vh;display:grid;grid-template-rows:auto 1fr}
+    .topbar{position:sticky;top:0;z-index:50;display:flex;align-items:center;justify-content:space-between;gap:16px;padding:14px 20px;border-bottom:2px dashed var(--line);background:rgba(18,6,9,.86);backdrop-filter:blur(12px)}
+    .brand{display:flex;align-items:center;gap:14px;min-width:0}
+    .brand-badge{width:52px;height:52px;flex:0 0 auto;display:grid;place-items:center;border:2px solid rgba(230,36,46,.36);border-radius:16px;background:radial-gradient(circle at 25% 20%,rgba(230,36,46,.34),transparent 42%),linear-gradient(145deg,var(--panel),var(--bg2));box-shadow:var(--shadow);transform:rotate(-2deg)}
+    .brand-copy h1{margin:0;font-family:var(--font-display);font-size:clamp(1.55rem,3vw,2.25rem);letter-spacing:.045em;text-shadow:3px 3px 0 rgba(0,0,0,.66);line-height:.95}
+    .brand-copy h1 span{color:var(--red)}
+    .brand-copy p{margin:4px 0 0;font-size:.82rem;color:var(--mut);letter-spacing:.14em;text-transform:uppercase}
+    .top-actions{display:flex;align-items:center;gap:12px;flex-wrap:wrap;justify-content:flex-end}
+    .user-chip{display:flex;align-items:center;gap:10px;padding:8px 12px;border:2px solid var(--line);border-radius:999px;background:rgba(27,11,16,.82);box-shadow:var(--shadow-soft);max-width:min(360px,calc(100vw - 180px))}
+    .user-chip .avatar{width:34px;height:34px;flex:0 0 auto;display:grid;place-items:center;border-radius:999px;background:linear-gradient(135deg,var(--red),var(--deep));color:#fff;font-weight:700;box-shadow:var(--shadow-soft)}
+    .user-chip .who{min-width:0;line-height:1.08}
+    .user-chip .who strong{display:block;font-size:.92rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .user-chip .who small{color:var(--mut);font-size:.74rem;text-transform:uppercase;letter-spacing:.12em}
+    .btn{appearance:none;border:2px solid rgba(230,36,46,.26);border-radius:14px;padding:12px 18px;background:linear-gradient(135deg,var(--red),var(--deep));color:#fff;font-family:var(--font-display);font-size:1rem;letter-spacing:.08em;text-transform:uppercase;box-shadow:var(--shadow);transition:transform .16s ease,box-shadow .16s ease,opacity .16s ease;text-align:center}
+    .btn:hover{transform:translate(-2px,-2px);box-shadow:6px 6px 0 rgba(0,0,0,.72)}
+    .btn:active{transform:translate(0,0);box-shadow:var(--shadow-soft)}
+    .btn:disabled{opacity:.45;cursor:not-allowed;transform:none}
+    .btn.secondary{background:linear-gradient(135deg,rgba(61,123,255,.96),#1c3f8f);border-color:rgba(61,123,255,.38)}
+    .btn.ghost{background:rgba(27,11,16,.72);border:2px dashed var(--line);color:var(--ink)}
+    .btn.small{padding:9px 13px;font-size:.86rem;border-radius:12px}
+    .layout{display:grid;grid-template-columns:250px minmax(0,1fr);gap:20px;padding:20px;align-items:start}
+    .side{position:sticky;top:92px;display:grid;gap:14px}
+    .panel{background:linear-gradient(180deg,rgba(35,16,23,.96),rgba(27,11,16,.96));border:2px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow)}
+    .nav{padding:14px;display:grid;gap:8px}
+    .nav-title{margin:0;font-family:var(--font-display);font-size:1.05rem;letter-spacing:.1em;color:var(--mut);text-transform:uppercase}
+    .nav-item{width:100%;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 13px;border-radius:14px;border:2px solid transparent;background:rgba(18,6,9,.35);color:var(--ink);font-weight:700;text-align:left;transition:transform .16s ease,border-color .16s ease,background .16s ease}
+    .nav-item:hover{transform:translateX(2px);border-color:rgba(230,36,46,.24)}
+    .nav-item.active{background:linear-gradient(135deg,rgba(230,36,46,.18),rgba(143,18,32,.28));border-color:rgba(230,36,46,.42);box-shadow:var(--shadow-soft)}
+    .nav-item .state{font-size:.7rem;padding:4px 7px;border-radius:999px;border:1px solid var(--line);color:var(--mut);text-transform:uppercase;letter-spacing:.08em;background:rgba(18,6,9,.5);white-space:nowrap}
+    .nav-item.locked{opacity:.56;cursor:not-allowed}
+    .main{display:grid;gap:18px;min-width:0}
+    .page-head{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;padding:18px;flex-wrap:wrap}
+    .page-head h2{margin:0;font-family:var(--font-display);font-size:clamp(1.7rem,3vw,2.4rem);letter-spacing:.05em;text-shadow:3px 3px 0 rgba(0,0,0,.64)}
+    .page-head p{margin:7px 0 0;color:var(--mut);max-width:70ch}
+    .toolbar{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;padding:14px 18px;border-top:2px dashed var(--line);border-bottom:2px dashed var(--line);background:rgba(18,6,9,.28)}
+    .toolbar .left,.toolbar .right{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+    .search{position:relative;min-width:min(320px,100%)}
+    .search input{width:100%;padding:12px 14px 12px 40px;border-radius:13px;border:2px solid rgba(230,36,46,.22);background:rgba(18,6,9,.65);color:var(--ink);outline:none}
+    .search input::placeholder{color:#987d84}
+    .search svg{position:absolute;left:12px;top:50%;transform:translateY(-50%);opacity:.82;pointer-events:none}
+    .content{padding:18px;display:grid;gap:16px}
+    .empty,.pending,.overdue,.signed{border-radius:calc(var(--radius) - 4px);padding:12px 14px;font-size:.8rem;font-weight:800;letter-spacing:.08em;text-transform:uppercase;display:inline-flex;align-items:center;gap:8px;border:1px solid transparent}
+    .empty{color:var(--mut);border-color:rgba(194,169,174,.28);background:rgba(194,169,174,.06)}
+    .pending{color:#ffd76e;border-color:rgba(255,215,110,.34);background:rgba(255,215,110,.08)}
+    .overdue{color:#ff8f8f;border-color:rgba(230,36,46,.34);background:rgba(230,36,46,.10)}
+    .signed{color:var(--green);border-color:rgba(125,255,160,.34);background:rgba(125,255,160,.08)}
+    .doc-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:16px}
+    .doc-card{display:grid;gap:12px;padding:16px;border-radius:var(--radius);border:2px solid var(--line);background:linear-gradient(180deg,rgba(35,16,23,.96),rgba(27,11,16,.96));box-shadow:var(--shadow);transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease;min-width:0}
+    .doc-card:hover{transform:translate(-3px,-3px);box-shadow:7px 7px 0 rgba(0,0,0,.72);border-color:rgba(230,36,46,.34)}
+    .doc-top{display:flex;align-items:center;justify-content:space-between;gap:10px}
+    .doc-type{display:inline-flex;align-items:center;gap:8px;min-width:0;color:var(--mut);font-size:.82rem;letter-spacing:.08em;text-transform:uppercase}
+    .doc-title{margin:0;font-size:1.08rem;line-height:1.28;overflow-wrap:anywhere}
+    .doc-meta{display:grid;gap:4px;color:var(--mut);font-size:.88rem;overflow-wrap:anywhere}
+    .doc-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:4px}
+    .divider{height:0;border-top:2px dashed var(--line);margin:2px 0}
+    .empty-state{padding:34px 22px;display:grid;place-items:center;gap:14px;text-align:center;border:2px dashed rgba(230,36,46,.28);border-radius:var(--radius);background:rgba(18,6,9,.3)}
+    .empty-state h3{margin:0;font-family:var(--font-display);font-size:clamp(1.5rem,3vw,2rem);letter-spacing:.05em}
+    .empty-state p{margin:0;color:var(--mut);max-width:64ch}
+    .modal{position:fixed;inset:0;z-index:100;display:grid;place-items:center;padding:20px;background:rgba(8,3,5,.76);backdrop-filter:blur(8px)}
+    .modal-box{width:min(760px,100%);max-height:min(88vh,960px);overflow:auto;padding:18px}
+    .modal-box.wide{width:min(1060px,100%)}
+    .modal-head{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:12px}
+    .modal-head h3{margin:0;font-family:var(--font-display);font-size:clamp(1.35rem,3vw,1.9rem);letter-spacing:.05em;overflow-wrap:anywhere}
+    .icon-btn{width:42px;height:42px;display:grid;place-items:center;border-radius:12px;border:2px solid var(--line);background:rgba(18,6,9,.55);color:var(--ink);box-shadow:var(--shadow-soft)}
+    .field{display:grid;gap:8px;margin-bottom:14px}
+    .field label{font-size:.86rem;color:var(--mut);letter-spacing:.08em;text-transform:uppercase}
+    .field input,.field textarea{width:100%;padding:13px 14px;border-radius:14px;border:2px solid rgba(230,36,46,.22);background:rgba(18,6,9,.62);color:var(--ink);outline:none}
+    .field input:focus,.field textarea:focus{border-color:rgba(230,36,46,.52);box-shadow:0 0 0 3px rgba(230,36,46,.12)}
+    .upload-drop{display:grid;place-items:center;gap:10px;padding:28px 18px;border:3px dashed rgba(230,36,46,.32);border-radius:18px;background:rgba(18,6,9,.34);text-align:center;cursor:pointer;transition:transform .16s ease,border-color .16s ease,background .16s ease}
+    .upload-drop:hover,.upload-drop.drag{transform:translateY(-2px);border-color:rgba(230,36,46,.56);background:rgba(230,36,46,.07)}
+    .upload-drop strong{font-family:var(--font-display);font-size:1.2rem;letter-spacing:.06em}
+    .upload-drop small{color:var(--mut)}
+    .file-list{display:grid;gap:10px;margin-top:14px}
+    .file-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 12px;border-radius:14px;border:2px solid rgba(230,36,46,.18);background:rgba(18,6,9,.35);overflow-wrap:anywhere}
+    .sign-layout{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(290px,.85fr);gap:16px}
+    .sign-controls{display:grid;gap:12px;align-content:start}
+    .preview-pane{border:2px dashed rgba(230,36,46,.3);border-radius:16px;background:rgba(18,6,9,.3);padding:12px;overflow:auto;max-height:660px;display:grid;gap:12px;justify-items:center;align-content:start}
+    .pin-host{position:relative}
+    .preview-img-wrap{display:inline-block;max-width:100%}
+    .doc-preview-img{display:block;max-width:100%;border-radius:8px;cursor:crosshair}
+    .pdf-page{width:100%;cursor:crosshair;background:#fff;border-radius:6px;overflow:hidden}
+    .pdf-page canvas{display:block;width:100%}
+    .pin{position:absolute;transform:translate(-50%,-50%);width:32px;height:32px;border-radius:999px;background:rgba(230,36,46,.95);border:2px solid #fff;color:#fff;display:grid;place-items:center;font-size:15px;font-weight:700;box-shadow:var(--shadow-soft);pointer-events:none;z-index:5}
+    .sign-tabs{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+    .sign-tab{padding:12px 14px;border-radius:14px;border:2px solid rgba(230,36,46,.2);background:rgba(18,6,9,.4);color:var(--mut);font-weight:800;letter-spacing:.03em}
+    .sign-tab.active{color:#fff;background:linear-gradient(135deg,rgba(230,36,46,.24),rgba(143,18,32,.36));border-color:rgba(230,36,46,.5);box-shadow:var(--shadow-soft)}
+    .sign-pad{display:grid;gap:12px}
+    .canvas-wrap{position:relative;border:3px dashed rgba(230,36,46,.3);border-radius:18px;overflow:hidden;background:linear-gradient(180deg,rgba(247,238,240,.98),rgba(247,238,240,.94));min-height:240px}
+    .canvas-wrap canvas{display:block;width:100%;height:240px;touch-action:none;cursor:crosshair}
+    .canvas-hint{position:absolute;inset:auto 0 0 0;padding:9px 12px;font-size:.78rem;color:#57202a;background:rgba(247,238,240,.74);border-top:1px dashed rgba(143,18,32,.16);pointer-events:none}
+    .signature-list{display:grid;gap:10px}
+    .signature-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 12px;border-radius:14px;border:2px solid rgba(125,255,160,.16);background:rgba(125,255,160,.05);overflow-wrap:anywhere}
+    .signature-row .meta{display:grid;gap:3px;min-width:0}
+    .signature-row .meta strong{overflow-wrap:anywhere}
+    .signature-row .meta small{color:var(--mut);overflow-wrap:anywhere}
+    .auth-shell{min-height:100vh;display:grid;place-items:center;padding:22px}
+    .auth-card{width:min(460px,100%);padding:26px;text-align:center}
+    .auth-card .brand-badge{margin:0 auto 14px}
+    .auth-card h2{margin:0;font-family:var(--font-display);font-size:clamp(2rem,5vw,3rem);letter-spacing:.05em;text-shadow:3px 3px 0 rgba(0,0,0,.66)}
+    .auth-card h2 span{color:var(--red)}
+    .auth-card p{color:var(--mut);margin:10px 0 22px}
+    .toast{position:fixed;right:18px;bottom:18px;z-index:200;display:grid;gap:10px;max-width:min(380px,calc(100vw - 36px))}
+    .toast-item{padding:13px 15px;border-radius:16px;border:2px solid rgba(230,36,46,.3);background:rgba(24,8,12,.92);box-shadow:var(--shadow);color:var(--ink);animation:pop .18s ease;overflow-wrap:anywhere}
+    .toast-item.ok{border-color:rgba(125,255,160,.34)}
+    .toast-item.err{border-color:rgba(230,36,46,.54)}
+    @keyframes pop{from{transform:translateY(8px) scale(.98);opacity:0}to{transform:translateY(0) scale(1);opacity:1}}
+    .muted{color:var(--mut)}
+    .small{font-size:.86rem}
+    @media(max-width:900px){.layout{grid-template-columns:1fr}.side{position:static}.topbar{align-items:flex-start}.user-chip{max-width:100%}.sign-layout{grid-template-columns:1fr}}
   </style>
 </head>
 <body>
-  <!-- AUTH VIEW -->
   <main id="authView" class="auth-shell hidden">
     <section class="panel auth-card">
       <div class="brand-badge" aria-hidden="true">
-        <svg width="30" height="30" viewBox="0 0 32 32" fill="none">
-          <path d="M16 2v28M2 16h28M5 5l22 22M27 5L5 27" stroke="#e6242e" stroke-width="2.4" stroke-linecap="round"/>
-          <circle cx="16" cy="16" r="5.2" stroke="#f7eef0" stroke-width="2.4"/>
-        </svg>
+        <svg width="30" height="30" viewBox="0 0 32 32" fill="none"><path d="M16 2v28M2 16h28M5 5l22 22M27 5L5 27" stroke="#e6242e" stroke-width="2.4" stroke-linecap="round"/><circle cx="16" cy="16" r="5.2" stroke="#f7eef0" stroke-width="2.4"/></svg>
       </div>
-
       <h2>SPIDER<span>WEB</span></h2>
       <p>Studio OS back office. Log in to spin the web.</p>
-
       <form id="loginForm">
-        <div class="field">
-          <label for="loginEmail">Email</label>
-          <input id="loginEmail" type="email" autocomplete="username" required />
-        </div>
-
-        <div class="field">
-          <label for="loginPassword">Password</label>
-          <input id="loginPassword" type="password" autocomplete="current-password" required />
-        </div>
-
+        <div class="field"><label for="loginEmail">Email</label><input id="loginEmail" type="email" autocomplete="username" required /></div>
+        <div class="field"><label for="loginPassword">Password</label><input id="loginPassword" type="password" autocomplete="current-password" required /></div>
         <button id="loginBtn" class="btn" type="submit" style="width:100%">Log in</button>
       </form>
     </section>
   </main>
 
-  <!-- PENDING USER VIEW -->
   <main id="pendingView" class="auth-shell hidden">
     <section class="panel auth-card">
       <div class="brand-badge" aria-hidden="true">
-        <svg width="30" height="30" viewBox="0 0 32 32" fill="none">
-          <path d="M16 2v28M2 16h28M5 5l22 22M27 5L5 27" stroke="#e6242e" stroke-width="2.4" stroke-linecap="round"/>
-          <circle cx="16" cy="16" r="5.2" stroke="#f7eef0" stroke-width="2.4"/>
-        </svg>
+        <svg width="30" height="30" viewBox="0 0 32 32" fill="none"><path d="M16 2v28M2 16h28M5 5l22 22M27 5L5 27" stroke="#e6242e" stroke-width="2.4" stroke-linecap="round"/><circle cx="16" cy="16" r="5.2" stroke="#f7eef0" stroke-width="2.4"/></svg>
       </div>
-
       <h2>WEB <span>PENDING</span></h2>
       <p id="pendingText">Your account is waiting for admin approval.</p>
       <button id="pendingSignOutBtn" class="btn ghost" type="button">Sign out</button>
     </section>
   </main>
 
-  <!-- APP VIEW -->
   <div id="appView" class="app hidden">
     <header class="topbar">
       <div class="brand">
         <div class="brand-badge" aria-hidden="true">
-          <svg width="30" height="30" viewBox="0 0 32 32" fill="none">
-            <path d="M16 2v28M2 16h28M5 5l22 22M27 5L5 27" stroke="#e6242e" stroke-width="2.4" stroke-linecap="round"/>
-            <circle cx="16" cy="16" r="5.2" stroke="#f7eef0" stroke-width="2.4"/>
-          </svg>
+          <svg width="30" height="30" viewBox="0 0 32 32" fill="none"><path d="M16 2v28M2 16h28M5 5l22 22M27 5L5 27" stroke="#e6242e" stroke-width="2.4" stroke-linecap="round"/><circle cx="16" cy="16" r="5.2" stroke="#f7eef0" stroke-width="2.4"/></svg>
         </div>
-
         <div class="brand-copy">
           <h1>SPIDER<span>WEB</span> STUDIO OS</h1>
           <p>We spin webs that catch customers</p>
         </div>
       </div>
-
       <div class="top-actions">
         <div class="user-chip">
           <div id="userAvatar" class="avatar">A</div>
-          <div class="who">
-            <strong id="userName">Admin</strong>
-            <small id="userRole">Admin</small>
-          </div>
+          <div class="who"><strong id="userName">Admin</strong><small id="userRole">Admin</small></div>
         </div>
-
         <button id="signOutBtn" class="btn ghost small" type="button">Sign out</button>
       </div>
     </header>
@@ -922,33 +179,12 @@
       <aside class="side">
         <section class="panel nav" aria-label="Primary navigation">
           <h2 class="nav-title">Studio OS</h2>
-
-          <button class="nav-item active" data-view="documents" type="button">
-            <span>Documents</span>
-            <span class="state">Drop 1</span>
-          </button>
-
-          <button class="nav-item locked" disabled type="button">
-            <span>Tasks</span>
-            <span class="state">Drop 2</span>
-          </button>
-
-          <button class="nav-item locked" disabled type="button">
-            <span>Customers</span>
-            <span class="state">Drop 2</span>
-          </button>
-
-          <button class="nav-item locked" disabled type="button">
-            <span>Team approvals</span>
-            <span class="state">Drop 2</span>
-          </button>
-
-          <button class="nav-item locked" disabled type="button">
-            <span>Dashboard</span>
-            <span class="state">Drop 2</span>
-          </button>
+          <button class="nav-item active" type="button"><span>Documents</span><span class="state">Drop 1</span></button>
+          <button class="nav-item locked" disabled type="button"><span>Tasks</span><span class="state">Drop 2</span></button>
+          <button class="nav-item locked" disabled type="button"><span>Customers</span><span class="state">Drop 2</span></button>
+          <button class="nav-item locked" disabled type="button"><span>Team approvals</span><span class="state">Drop 2</span></button>
+          <button class="nav-item locked" disabled type="button"><span>Dashboard</span><span class="state">Drop 2</span></button>
         </section>
-
         <section class="panel nav" aria-label="System status">
           <h2 class="nav-title">Web status</h2>
           <div class="small muted" id="systemStatus">Checking Firebase + Supabase…</div>
@@ -960,45 +196,26 @@
           <div class="page-head">
             <div>
               <h2>Documents & e-Signatures</h2>
-              <p>
-                Upload contracts, authorizations, receipts, or any file that needs a signature.
-                Sign with one click or draw a signature on phone. Files live in Supabase, signature records live in Firestore.
-              </p>
+              <p>Upload a file, choose how many signatures it needs, tap where each signature goes, then download the stamped signed copy.</p>
             </div>
-
             <button id="newDocumentBtn" class="btn" type="button">New document</button>
           </div>
-
           <div class="toolbar">
             <div class="left">
               <div class="search">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                  <circle cx="11" cy="11" r="7" stroke="#c2a9ae" stroke-width="2"/>
-                  <path d="M20 20l-3.5-3.5" stroke="#c2a9ae" stroke-width="2" stroke-linecap="round"/>
-                </svg>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="11" cy="11" r="7" stroke="#c2a9ae" stroke-width="2"/><path d="M20 20l-3.5-3.5" stroke="#c2a9ae" stroke-width="2" stroke-linecap="round"/></svg>
                 <input id="docSearch" type="search" placeholder="Search documents, people, files…" />
               </div>
             </div>
-
-            <div class="right">
-              <button id="refreshDocsBtn" class="btn ghost small" type="button">Refresh</button>
-            </div>
+            <div class="right"><button id="refreshDocsBtn" class="btn ghost small" type="button">Refresh</button></div>
           </div>
-
           <div class="content">
-            <div id="docsLoading" class="empty-state hidden">
-              <h3>LOADING WEB…</h3>
-              <p>Pulling documents from Firestore.</p>
-            </div>
-
+            <div id="docsLoading" class="empty-state hidden"><h3>LOADING WEB…</h3><p>Pulling documents from Firestore.</p></div>
             <div id="docsEmpty" class="empty-state hidden">
               <h3>NO DOCUMENTS YET</h3>
-              <p>
-                Spin your first web: upload a contract or authorization, then sign it with one-click or gesture.
-              </p>
+              <p>Spin your first web: upload a contract, set how many signatures it needs, and place each signature right on the page.</p>
               <button id="emptyNewDocBtn" class="btn" type="button">New document</button>
             </div>
-
             <div id="docGrid" class="doc-grid"></div>
           </div>
         </section>
@@ -1006,37 +223,25 @@
     </div>
   </div>
 
-  <!-- UPLOAD MODAL -->
   <div id="uploadModal" class="modal hidden" role="dialog" aria-modal="true" aria-label="Upload document">
     <section class="panel modal-box">
       <div class="modal-head">
         <h3>New document</h3>
         <button class="icon-btn" data-close="uploadModal" type="button" aria-label="Close">✕</button>
       </div>
-
       <form id="uploadForm">
-        <div class="field">
-          <label for="docTitle">Document title</label>
-          <input id="docTitle" placeholder="Example: Website contract — Kund #12" required />
-        </div>
-
-        <div class="field">
-          <label for="docNotes">Notes, optional</label>
-          <input id="docNotes" placeholder="Example: Needs client signature before deposit" />
-        </div>
-
+        <div class="field"><label for="docTitle">Document title</label><input id="docTitle" placeholder="Example: Website contract — Kund #12" required /></div>
+        <div class="field"><label for="docNotes">Notes, optional</label><input id="docNotes" placeholder="Example: Needs client signature before deposit" /></div>
+        <div class="field"><label for="docRequired">Required signatures</label><input id="docRequired" type="number" min="1" step="1" value="1" /></div>
         <label class="upload-drop" id="uploadDrop" for="fileInput">
           <strong>CLICK TO UPLOAD</strong>
           <small>or drag and drop a file here</small>
-          <small class="muted">PDF, images, docs, anything Supabase can store. Free-tier friendly.</small>
+          <small class="muted">PDF and images get full preview + placed signatures. Other files store signatures in the record.</small>
           <input id="fileInput" type="file" hidden />
         </label>
-
         <div class="file-list" id="fileList"></div>
-
         <div class="divider" style="margin:16px 0"></div>
-
-        <div style="display:flex; gap:12px; flex-wrap:wrap;">
+        <div style="display:flex;gap:12px;flex-wrap:wrap;">
           <button id="uploadSubmitBtn" class="btn" type="submit" disabled>Upload to web</button>
           <button class="btn ghost" type="button" data-close="uploadModal">Cancel</button>
         </div>
@@ -1044,60 +249,50 @@
     </section>
   </div>
 
-  <!-- SIGN MODAL -->
   <div id="signModal" class="modal hidden" role="dialog" aria-modal="true" aria-label="Sign document">
-    <section class="panel modal-box">
+    <section class="panel modal-box wide">
       <div class="modal-head">
         <h3 id="signDocTitle">Sign document</h3>
         <button class="icon-btn" data-close="signModal" type="button" aria-label="Close">✕</button>
       </div>
-
-      <div class="field">
-        <label for="signerName">Signer name</label>
-        <input id="signerName" placeholder="Full name" required />
-      </div>
-
-      <div class="sign-tabs">
-        <button id="tabOneClick" class="sign-tab active" type="button">One-click signature</button>
-        <button id="tabDraw" class="sign-tab" type="button">Draw signature</button>
-      </div>
-
-      <section id="oneClickPane" class="sign-pad">
-        <p class="muted small">
-          One-click signing records the signer name, device/browser, date, and time.
-          This is stored in Firestore as an e-signature record.
-        </p>
-        <button id="oneClickSignBtn" class="btn" type="button">Sign with one click</button>
-      </section>
-
-      <section id="drawPane" class="sign-pad hidden">
-        <div class="canvas-wrap">
-          <canvas id="signatureCanvas"></canvas>
-          <div class="canvas-hint">Draw with mouse, finger, or stylus. This PNG is stored with the signature.</div>
+      <div class="sign-layout">
+        <div class="preview-pane" id="previewPane"></div>
+        <div class="sign-controls">
+          <div class="field"><label for="signerName">Signer name</label><input id="signerName" placeholder="Full name" required /></div>
+          <div id="placementHint" class="muted small"></div>
+          <div class="sign-tabs">
+            <button id="tabOneClick" class="sign-tab active" type="button">One-click signature</button>
+            <button id="tabDraw" class="sign-tab" type="button">Draw signature</button>
+          </div>
+          <section id="oneClickPane" class="sign-pad">
+            <p class="muted small">One-click signing records name, device, date and time — and stamps your typed signature exactly where you tapped.</p>
+            <button id="oneClickSignBtn" class="btn" type="button">Sign with one click</button>
+          </section>
+          <section id="drawPane" class="sign-pad hidden">
+            <div class="canvas-wrap">
+              <canvas id="signatureCanvas"></canvas>
+              <div class="canvas-hint">Draw with mouse, finger, or stylus. The drawing is stamped where you tapped.</div>
+            </div>
+            <div style="display:flex;gap:12px;flex-wrap:wrap;">
+              <button id="clearCanvasBtn" class="btn ghost" type="button">Clear</button>
+              <button id="saveDrawingBtn" class="btn secondary" type="button">Sign with drawing</button>
+            </div>
+          </section>
+          <div class="divider"></div>
+          <h4 style="margin:0 0 10px;font-family:var(--font-display);letter-spacing:.08em;color:var(--mut);text-transform:uppercase;">Signature history</h4>
+          <div id="signatureList" class="signature-list"></div>
         </div>
-
-        <div style="display:flex; gap:12px; flex-wrap:wrap;">
-          <button id="clearCanvasBtn" class="btn ghost" type="button">Clear</button>
-          <button id="saveDrawingBtn" class="btn secondary" type="button">Save drawing</button>
-        </div>
-      </section>
-
-      <div class="divider" style="margin:18px 0"></div>
-
-      <h4 style="margin:0 0 10px; font-family:var(--font-display); letter-spacing:.08em; color:var(--mut); text-transform:uppercase;">
-        Signature history
-      </h4>
-
-      <div id="signatureList" class="signature-list"></div>
+      </div>
     </section>
   </div>
 
   <div id="toast" class="toast" aria-live="polite"></div>
-  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
   <script>
     const FIREBASE_CONFIG = {
       apiKey: "AIzaSyAVp_wqzt5gn54y0-0hFf7u9GrTgV_xEls",
@@ -1107,96 +302,78 @@
       messagingSenderId: "341291634792",
       appId: "1:341291634792:web:25b56a063f24c9b983ebdd"
     };
-
     const SUPABASE_URL = "https://kaeqlzdgfsssmehmskdn.supabase.co";
     const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_CcxIPiwFbSFvzkL3gFOsgw_U-6c3yVx";
     const SUPABASE_BUCKET = "docs";
-
     const ADMIN_EMAIL = "amanu@spiderweb.lol";
+    const PDFJS_CDN = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/";
 
     firebase.initializeApp(FIREBASE_CONFIG);
     const auth = firebase.auth();
     const db = firebase.firestore();
-
     const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
+    if (window.pdfjsLib) window.pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS_CDN + "pdf.worker.min.js";
 
     const els = {
       authView: document.getElementById("authView"),
       pendingView: document.getElementById("pendingView"),
       appView: document.getElementById("appView"),
-
       loginForm: document.getElementById("loginForm"),
       loginEmail: document.getElementById("loginEmail"),
       loginPassword: document.getElementById("loginPassword"),
       loginBtn: document.getElementById("loginBtn"),
-
       pendingText: document.getElementById("pendingText"),
       pendingSignOutBtn: document.getElementById("pendingSignOutBtn"),
-
       userAvatar: document.getElementById("userAvatar"),
       userName: document.getElementById("userName"),
       userRole: document.getElementById("userRole"),
       signOutBtn: document.getElementById("signOutBtn"),
-
       systemStatus: document.getElementById("systemStatus"),
-
       newDocumentBtn: document.getElementById("newDocumentBtn"),
       emptyNewDocBtn: document.getElementById("emptyNewDocBtn"),
       refreshDocsBtn: document.getElementById("refreshDocsBtn"),
       docSearch: document.getElementById("docSearch"),
-
       docsLoading: document.getElementById("docsLoading"),
       docsEmpty: document.getElementById("docsEmpty"),
       docGrid: document.getElementById("docGrid"),
-
-      uploadModal: document.getElementById("uploadModal"),
       uploadForm: document.getElementById("uploadForm"),
       docTitle: document.getElementById("docTitle"),
       docNotes: document.getElementById("docNotes"),
+      docRequired: document.getElementById("docRequired"),
       uploadDrop: document.getElementById("uploadDrop"),
       fileInput: document.getElementById("fileInput"),
       fileList: document.getElementById("fileList"),
       uploadSubmitBtn: document.getElementById("uploadSubmitBtn"),
-
-      signModal: document.getElementById("signModal"),
       signDocTitle: document.getElementById("signDocTitle"),
       signerName: document.getElementById("signerName"),
-
+      placementHint: document.getElementById("placementHint"),
+      previewPane: document.getElementById("previewPane"),
       tabOneClick: document.getElementById("tabOneClick"),
       tabDraw: document.getElementById("tabDraw"),
       oneClickPane: document.getElementById("oneClickPane"),
       drawPane: document.getElementById("drawPane"),
       oneClickSignBtn: document.getElementById("oneClickSignBtn"),
-
       signatureCanvas: document.getElementById("signatureCanvas"),
       clearCanvasBtn: document.getElementById("clearCanvasBtn"),
       saveDrawingBtn: document.getElementById("saveDrawingBtn"),
       signatureList: document.getElementById("signatureList"),
-
       toast: document.getElementById("toast")
     };
 
     const state = {
-      user: null,
-      profile: null,
-      docs: [],
-      activeDocId: null,
-      activeDoc: null,
-      selectedFile: null,
-      drawing: false,
-      lastPoint: null,
-      ctx: null
+      user: null, profile: null, docs: [], activeDocId: null, activeDoc: null,
+      selectedFile: null, drawing: false, lastPoint: null, ctx: null,
+      placement: null, previewable: false, hasInk: false
     };
+
+    function clamp(v, min, max) { return Math.min(Math.max(v, min), max); }
 
     function toast(message, type = "ok") {
       const item = document.createElement("div");
       item.className = `toast-item ${type}`;
       item.textContent = message;
       els.toast.appendChild(item);
-
-      setTimeout(() => {
-        item.remove();
-      }, 5200);
+      setTimeout(() => item.remove(), 5200);
     }
 
     function show(view) {
@@ -1205,8 +382,8 @@
       els.appView.classList.toggle("hidden", view !== "app");
     }
 
-    function initials(nameOrEmail) {
-      const value = (nameOrEmail || "").trim();
+    function initials(v) {
+      const value = (v || "").trim();
       if (!value) return "SW";
       const parts = value.split(/[@\s._-]+/).filter(Boolean);
       if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
@@ -1216,88 +393,56 @@
     function formatDate(value) {
       try {
         const date = value?.toDate ? value.toDate() : new Date(value);
-        return new Intl.DateTimeFormat("en-US", {
-          year: "numeric",
-          month: "short",
-          day: "numeric",
-          hour: "2-digit",
-          minute: "2-digit"
-        }).format(date);
-      } catch (err) {
-        return String(value || "");
-      }
+        return new Intl.DateTimeFormat("en-US", { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(date);
+      } catch (err) { return String(value || ""); }
     }
 
     function formatBytes(bytes) {
       if (!Number.isFinite(bytes)) return "";
       if (bytes < 1024) return `${bytes} B`;
-      if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-      return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+      if (bytes < 1048576) return `${(bytes / 1024).toFixed(1)} KB`;
+      return `${(bytes / 1048576).toFixed(1)} MB`;
     }
 
     function escapeHtml(value) {
-      return String(value || "")
-        .replaceAll("&", "&amp;")
-        .replaceAll("<", "&lt;")
-        .replaceAll(">", "&gt;")
-        .replaceAll('"', "&quot;")
-        .replaceAll("'", "&#039;");
+      return String(value || "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;");
     }
 
     async function bootstrapProfile(user) {
       const ref = db.collection("c").doc("users").collection("list").doc(user.uid);
-
       const snap = await ref.get();
       if (snap.exists) return snap.data();
-
       const email = (user.email || "").toLowerCase();
       const isAdmin = email === ADMIN_EMAIL;
-
       const profile = {
-        uid: user.uid,
-        email,
+        uid: user.uid, email,
         name: email.split("@")[0] || "Spider",
         role: isAdmin ? "admin" : "staff",
         status: isAdmin ? "approved" : "pending",
         createdAt: firebase.firestore.FieldValue.serverTimestamp()
       };
-
       await ref.set(profile);
       return profile;
     }
 
     auth.onAuthStateChanged(async (user) => {
       state.user = user;
-
-      if (!user) {
-        state.profile = null;
-        state.docs = [];
-        show("auth");
-        return;
-      }
-
+      if (!user) { state.profile = null; state.docs = []; show("auth"); return; }
       try {
         const profile = await bootstrapProfile(user);
         state.profile = profile;
-
         if (profile.status !== "approved") {
-          els.pendingText.textContent =
-            profile.status === "pending"
-              ? "Your account is waiting for admin approval. Amanuel must approve you before you can enter Studio OS."
-              : "Your account is not active yet.";
+          els.pendingText.textContent = profile.status === "pending"
+            ? "Your account is waiting for admin approval. Amanuel must approve you before you can enter Studio OS."
+            : "Your account is not active yet.";
           show("pending");
           return;
         }
-
         els.userName.textContent = profile.name || user.email || "Admin";
         els.userRole.textContent = profile.role === "admin" ? "Admin" : "Staff";
         els.userAvatar.textContent = initials(profile.name || user.email);
-
         show("app");
-        await Promise.all([
-          checkSystem(),
-          loadDocs()
-        ]);
+        await Promise.all([checkSystem(), loadDocs()]);
       } catch (err) {
         console.error(err);
         toast(`Login bootstrap failed: ${err.message}`, "err");
@@ -1308,18 +453,12 @@
     els.loginForm.addEventListener("submit", async (event) => {
       event.preventDefault();
       els.loginBtn.disabled = true;
-
       try {
-        await auth.signInWithEmailAndPassword(
-          els.loginEmail.value.trim(),
-          els.loginPassword.value
-        );
+        await auth.signInWithEmailAndPassword(els.loginEmail.value.trim(), els.loginPassword.value);
       } catch (err) {
         console.error(err);
         toast(err.message || "Login failed.", "err");
-      } finally {
-        els.loginBtn.disabled = false;
-      }
+      } finally { els.loginBtn.disabled = false; }
     });
 
     els.signOutBtn.addEventListener("click", () => auth.signOut());
@@ -1327,150 +466,85 @@
 
     async function checkSystem() {
       try {
-        const testQuery = db.collection("c").doc("users").collection("list").limit(1);
-        await testQuery.get();
-        els.systemStatus.textContent = "Firebase OK. Supabase client loaded.";
+        await db.collection("c").doc("users").collection("list").limit(1).get();
+        els.systemStatus.textContent = "Firebase OK. Supabase + PDF engines loaded.";
       } catch (err) {
         console.error(err);
         els.systemStatus.textContent = `Firebase issue: ${err.message}`;
       }
     }
 
-    function docsCollection() {
-      return db.collection("c").doc("docs").collection("list");
-    }
+    function docsCollection() { return db.collection("c").doc("docs").collection("list"); }
 
     async function loadDocs() {
       els.docsLoading.classList.remove("hidden");
       els.docsEmpty.classList.add("hidden");
-
       try {
-        const snap = await docsCollection()
-          .orderBy("createdAt", "desc")
-          .get();
-
-        state.docs = snap.docs.map((docSnap) => ({
-          id: docSnap.id,
-          ...docSnap.data()
-        }));
-
+        const snap = await docsCollection().orderBy("createdAt", "desc").get();
+        state.docs = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
         renderDocs();
       } catch (err) {
         console.error(err);
         toast(`Could not load documents: ${err.message}`, "err");
         els.docsEmpty.classList.remove("hidden");
-      } finally {
-        els.docsLoading.classList.add("hidden");
-      }
+      } finally { els.docsLoading.classList.add("hidden"); }
     }
 
     els.refreshDocsBtn.addEventListener("click", loadDocs);
-
-    els.docSearch.addEventListener("input", () => {
-      renderDocs();
-    });
+    els.docSearch.addEventListener("input", renderDocs);
 
     function renderDocs() {
       const term = els.docSearch.value.trim().toLowerCase();
       els.docGrid.innerHTML = "";
-
       const docs = state.docs.filter((doc) => {
         if (!term) return true;
-        const haystack = [
-          doc.title,
-          doc.fileName,
-          doc.notes,
-          doc.uploadedByEmail,
-          doc.uploadedByName,
-          (doc.signatures || []).map((s) => s.name).join(" ")
-        ].join(" ").toLowerCase();
-
+        const haystack = [doc.title, doc.fileName, doc.notes, doc.uploadedByEmail, doc.uploadedByName, (doc.signatures || []).map((s) => s.name).join(" ")].join(" ").toLowerCase();
         return haystack.includes(term);
       });
-
-      if (!docs.length) {
-        els.docsEmpty.classList.remove("hidden");
-        return;
-      }
-
+      if (!docs.length) { els.docsEmpty.classList.remove("hidden"); return; }
       els.docsEmpty.classList.add("hidden");
-
+      const isAdmin = state.profile?.role === "admin";
       for (const doc of docs) {
-        const signatureCount = Array.isArray(doc.signatures) ? doc.signatures.length : 0;
-        const badge = signatureCount > 0
-          ? `<span class="signed">Signed ×${signatureCount}</span>`
-          : `<span class="pending">Awaiting signature</span>`;
-
+        const count = Array.isArray(doc.signatures) ? doc.signatures.length : 0;
+        const req = Math.max(1, Number(doc.requiredSignatures) || 1);
+        const badge = count >= req
+          ? `<span class="signed">Fully signed ${count}/${req}</span>`
+          : count > 0 ? `<span class="pending">Signed ${count}/${req}</span>` : `<span class="pending">Awaiting signature</span>`;
+        const deleteBtn = isAdmin ? '<button class="btn ghost small" data-action="delete" type="button">Delete</button>' : "";
         const card = document.createElement("article");
         card.className = "doc-card";
-
         card.innerHTML = `
-          <div class="doc-top">
-            <span class="doc-type">${escapeHtml(doc.fileType || "file")}</span>
-            ${badge}
-          </div>
-
+          <div class="doc-top"><span class="doc-type">${escapeHtml((doc.fileType || "file").split("/")[1] || "file")}</span>${badge}</div>
           <h3 class="doc-title">${escapeHtml(doc.title || doc.fileName || "Untitled document")}</h3>
-
           <div class="doc-meta">
             <span>File: ${escapeHtml(doc.fileName || "unknown")}</span>
             <span>Size: ${escapeHtml(formatBytes(doc.fileSize)) || "unknown"}</span>
             <span>Uploaded: ${escapeHtml(formatDate(doc.createdAt))}</span>
             <span>By: ${escapeHtml(doc.uploadedByName || doc.uploadedByEmail || "unknown")}</span>
           </div>
-
           <div class="divider"></div>
-
           <div class="doc-actions">
-            <button class="btn small" data-action="sign">Sign</button>
-            <button class="btn ghost small" data-action="download">Download</button>
-          </div>
-        `;
-
-        card.querySelector('[data-action="sign"]').addEventListener("click", () => {
-          openSignModal(doc.id);
-        });
-
-        card.querySelector('[data-action="download"]').addEventListener("click", async () => {
-          await downloadDocument(doc);
-        });
-
+            <button class="btn small" data-action="sign" type="button">Sign</button>
+            <button class="btn secondary small" data-action="signed" type="button" ${count === 0 ? "disabled" : ""}>Signed copy</button>
+            <button class="btn ghost small" data-action="download" type="button">Download</button>
+            ${deleteBtn}
+          </div>`;
+        card.querySelector('[data-action="sign"]').addEventListener("click", () => openSignModal(doc.id));
+        card.querySelector('[data-action="signed"]').addEventListener("click", () => buildSignedCopy(doc));
+        card.querySelector('[data-action="download"]').addEventListener("click", () => downloadDocument(doc));
+        const del = card.querySelector('[data-action="delete"]');
+        if (del) del.addEventListener("click", () => deleteDocument(doc));
         els.docGrid.appendChild(card);
       }
     }
 
-    function openModal(id) {
-      document.getElementById(id).classList.remove("hidden");
-      document.body.style.overflow = "hidden";
-    }
+    function openModal(id) { document.getElementById(id).classList.remove("hidden"); document.body.style.overflow = "hidden"; }
+    function closeModal(id) { document.getElementById(id).classList.add("hidden"); document.body.style.overflow = ""; }
+    document.querySelectorAll("[data-close]").forEach((btn) => btn.addEventListener("click", () => closeModal(btn.getAttribute("data-close"))));
+    window.addEventListener("keydown", (e) => { if (e.key === "Escape") { closeModal("uploadModal"); closeModal("signModal"); } });
 
-    function closeModal(id) {
-      document.getElementById(id).classList.add("hidden");
-      document.body.style.overflow = "";
-    }
-
-    document.querySelectorAll("[data-close]").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        closeModal(btn.getAttribute("data-close"));
-      });
-    });
-
-    window.addEventListener("keydown", (event) => {
-      if (event.key === "Escape") {
-        closeModal("uploadModal");
-        closeModal("signModal");
-      }
-    });
-
-    els.newDocumentBtn.addEventListener("click", () => {
-      resetUploadForm();
-      openModal("uploadModal");
-    });
-
-    els.emptyNewDocBtn.addEventListener("click", () => {
-      resetUploadForm();
-      openModal("uploadModal");
-    });
+    els.newDocumentBtn.addEventListener("click", () => { resetUploadForm(); openModal("uploadModal"); });
+    els.emptyNewDocBtn.addEventListener("click", () => { resetUploadForm(); openModal("uploadModal"); });
 
     function resetUploadForm() {
       els.uploadForm.reset();
@@ -1482,79 +556,36 @@
 
     function setSelectedFile(file) {
       state.selectedFile = file;
-
       els.fileList.innerHTML = `
         <div class="file-row">
-          <div>
-            <strong>${escapeHtml(file.name)}</strong><br />
-            <small class="muted">${escapeHtml(file.type || "file")} · ${escapeHtml(formatBytes(file.size))}</small>
-          </div>
+          <div><strong>${escapeHtml(file.name)}</strong><br /><small class="muted">${escapeHtml(file.type || "file")} · ${escapeHtml(formatBytes(file.size))}</small></div>
           <button class="btn ghost small" id="removeFileBtn" type="button">Remove</button>
-        </div>
-      `;
-
+        </div>`;
       document.getElementById("removeFileBtn").addEventListener("click", () => {
-        state.selectedFile = null;
-        els.fileInput.value = "";
-        els.fileList.innerHTML = "";
-        els.uploadSubmitBtn.disabled = true;
+        state.selectedFile = null; els.fileInput.value = ""; els.fileList.innerHTML = ""; els.uploadSubmitBtn.disabled = true;
       });
-
-      if (!els.docTitle.value) {
-        els.docTitle.value = file.name.replace(/\.[^.]+$/, "").replaceAll(/[-_]+/g, " ");
-      }
-
+      if (!els.docTitle.value) els.docTitle.value = file.name.replace(/\.[^.]+$/, "").replaceAll(/[-_]+/g, " ");
       els.uploadSubmitBtn.disabled = false;
     }
 
-    els.fileInput.addEventListener("change", () => {
-      const file = els.fileInput.files?.[0];
-      if (file) setSelectedFile(file);
-    });
-
-    els.uploadDrop.addEventListener("dragover", (event) => {
-      event.preventDefault();
-      els.uploadDrop.classList.add("drag");
-    });
-
-    els.uploadDrop.addEventListener("dragleave", () => {
-      els.uploadDrop.classList.remove("drag");
-    });
-
-    els.uploadDrop.addEventListener("drop", (event) => {
-      event.preventDefault();
-      els.uploadDrop.classList.remove("drag");
-      const file = event.dataTransfer.files?.[0];
-      if (file) setSelectedFile(file);
-    });
+    els.fileInput.addEventListener("change", () => { const f = els.fileInput.files?.[0]; if (f) setSelectedFile(f); });
+    els.uploadDrop.addEventListener("dragover", (e) => { e.preventDefault(); els.uploadDrop.classList.add("drag"); });
+    els.uploadDrop.addEventListener("dragleave", () => els.uploadDrop.classList.remove("drag"));
+    els.uploadDrop.addEventListener("drop", (e) => { e.preventDefault(); els.uploadDrop.classList.remove("drag"); const f = e.dataTransfer.files?.[0]; if (f) setSelectedFile(f); });
 
     els.uploadForm.addEventListener("submit", async (event) => {
       event.preventDefault();
-
       if (!state.user || !state.selectedFile) return;
-
       els.uploadSubmitBtn.disabled = true;
       els.uploadSubmitBtn.textContent = "Uploading…";
-
       try {
         const file = state.selectedFile;
         const safeName = file.name.replaceAll(/[^\w.\-]+/g, "-");
         const path = `${state.user.uid}/${Date.now()}-${safeName}`;
-
-        const { error: uploadError } = await supabaseClient.storage
-          .from(SUPABASE_BUCKET)
-          .upload(path, file, {
-            cacheControl: "3600",
-            upsert: false
-          });
-
+        const { error: uploadError } = await supabaseClient.storage.from(SUPABASE_BUCKET).upload(path, file, { cacheControl: "3600", upsert: false });
         if (uploadError) throw uploadError;
-
-        const { data: publicData } = supabaseClient.storage
-          .from(SUPABASE_BUCKET)
-          .getPublicUrl(path);
-
-        const docPayload = {
+        const { data: publicData } = supabaseClient.storage.from(SUPABASE_BUCKET).getPublicUrl(path);
+        await docsCollection().add({
           title: els.docTitle.value.trim(),
           notes: els.docNotes.value.trim(),
           fileName: file.name,
@@ -1566,13 +597,11 @@
           uploadedBy: state.user.uid,
           uploadedByEmail: state.user.email,
           uploadedByName: state.profile?.name || state.user.email,
+          requiredSignatures: Math.max(1, parseInt(els.docRequired.value || "1", 10) || 1),
           signatures: [],
           createdAt: firebase.firestore.FieldValue.serverTimestamp(),
           updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-        };
-
-        await docsCollection().add(docPayload);
-
+        });
         toast("Document uploaded to web.");
         closeModal("uploadModal");
         resetUploadForm();
@@ -1587,25 +616,15 @@
     });
 
     async function downloadDocument(doc) {
-      if (!doc.publicUrl) {
-        toast("No file URL found.", "err");
-        return;
-      }
-
+      if (!doc.publicUrl) { toast("No file URL found.", "err"); return; }
       try {
         const response = await fetch(doc.publicUrl);
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
-
         const blob = await response.blob();
         const url = URL.createObjectURL(blob);
-
         const a = document.createElement("a");
-        a.href = url;
-        a.download = doc.fileName || "document";
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-
+        a.href = url; a.download = doc.fileName || "document";
+        document.body.appendChild(a); a.click(); a.remove();
         URL.revokeObjectURL(url);
         toast("Download started.");
       } catch (err) {
@@ -1615,181 +634,249 @@
       }
     }
 
+    async function deleteDocument(doc) {
+      if (state.profile?.role !== "admin") { toast("Only the admin can delete documents.", "err"); return; }
+      if (!confirm(`Delete "${doc.title || doc.fileName}"? This cannot be undone.`)) return;
+      try {
+        await docsCollection().doc(doc.id).delete();
+        try { await supabaseClient.storage.from(SUPABASE_BUCKET).remove([doc.storagePath]); } catch (e) { console.warn("Storage cleanup skipped:", e); }
+        toast("Document deleted.");
+        await loadDocs();
+      } catch (err) {
+        console.error(err);
+        toast(`Delete failed: ${err.message}`, "err");
+      }
+    }
+
     function openSignModal(docId) {
       const doc = state.docs.find((item) => item.id === docId);
       if (!doc) return;
-
       state.activeDocId = docId;
       state.activeDoc = doc;
-
+      state.placement = null;
+      state.previewable = false;
       els.signDocTitle.textContent = doc.title || doc.fileName || "Sign document";
       els.signerName.value = state.profile?.name || "";
-
       switchSignTab("oneClick");
       renderSignatures(doc);
+      updatePlacementHint();
       openModal("signModal");
-      requestAnimationFrame(() => resizeCanvas());
+      renderPreview(doc);
+    }
+
+    async function renderPreview(doc) {
+      const mime = doc.fileType || "";
+      try {
+        if (mime.startsWith("image/")) { renderImagePreview(doc); return; }
+        if (mime === "application/pdf" && window.pdfjsLib) { await renderPdfPreview(doc); return; }
+        showPreviewFallback();
+      } catch (err) {
+        console.error(err);
+        showPreviewFallback(`Preview failed: ${err.message}`);
+      }
+    }
+
+    function renderImagePreview(doc) {
+      els.previewPane.innerHTML = '<div class="pin-host preview-img-wrap" id="imgHost"><img id="previewImg" class="doc-preview-img" alt="Document preview" /></div>';
+      const host = document.getElementById("imgHost");
+      const img = document.getElementById("previewImg");
+      img.onload = () => { state.previewable = true; updatePlacementHint(); };
+      img.onerror = () => { state.previewable = false; showPreviewFallback(); };
+      img.addEventListener("click", (e) => setPlacementFromEvent(e, host, 1));
+      img.src = doc.publicUrl;
+    }
+
+    async function renderPdfPreview(doc) {
+      els.previewPane.innerHTML = '<div class="muted small">Rendering PDF preview…</div>';
+      const res = await fetch(doc.publicUrl);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.arrayBuffer();
+      const pdf = await window.pdfjsLib.getDocument({ data }).promise;
+      els.previewPane.innerHTML = "";
+      const maxPages = Math.min(pdf.numPages, 5);
+      for (let p = 1; p <= maxPages; p++) {
+        const page = await pdf.getPage(p);
+        const base = page.getViewport({ scale: 1 });
+        const scale = clamp(760 / base.width, 0.4, 1.6);
+        const viewport = page.getViewport({ scale });
+        const pageDiv = document.createElement("div");
+        pageDiv.className = "pin-host pdf-page";
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.floor(viewport.width);
+        canvas.height = Math.floor(viewport.height);
+        pageDiv.appendChild(canvas);
+        els.previewPane.appendChild(pageDiv);
+        await page.render({ canvasContext: canvas.getContext("2d"), viewport }).promise;
+        pageDiv.addEventListener("click", (e) => setPlacementFromEvent(e, pageDiv, p));
+      }
+      if (pdf.numPages > maxPages) {
+        const note = document.createElement("div");
+        note.className = "muted small";
+        note.textContent = `Preview shows first ${maxPages} of ${pdf.numPages} pages. The signed copy stamps the exact page you tapped.`;
+        els.previewPane.appendChild(note);
+      }
+      state.previewable = true;
+      updatePlacementHint();
+    }
+
+    function showPreviewFallback(msg) {
+      state.previewable = false;
+      state.placement = null;
+      els.previewPane.innerHTML = `<div class="empty-state" style="width:100%"><h3>NO PREVIEW</h3><p>${escapeHtml(msg || "This file type can't be previewed. You can still sign — the signature is stored with the document record.")}</p></div>`;
+      updatePlacementHint();
+    }
+
+    function placePin(host, x, y) {
+      let pin = host.querySelector(".pin");
+      if (!pin) { pin = document.createElement("div"); pin.className = "pin"; pin.textContent = "✕"; host.appendChild(pin); }
+      pin.style.left = `${x * 100}%`;
+      pin.style.top = `${y * 100}%`;
+    }
+
+    function setPlacementFromEvent(e, host, page) {
+      const rect = host.getBoundingClientRect();
+      const x = clamp((e.clientX - rect.left) / rect.width, 0, 1);
+      const y = clamp((e.clientY - rect.top) / rect.height, 0, 1);
+      state.placement = { page, x, y };
+      placePin(host, x, y);
+      updatePlacementHint();
+    }
+
+    function updatePlacementHint() {
+      if (state.placement) {
+        els.placementHint.textContent = `Signature will be placed on page ${state.placement.page} at ${Math.round(state.placement.x * 100)}% × ${Math.round(state.placement.y * 100)}%.`;
+      } else if (state.previewable) {
+        els.placementHint.textContent = "Tap the document preview to choose where this signature goes.";
+      } else {
+        els.placementHint.textContent = "No preview for this file type — the signature will be stored with the document record.";
+      }
     }
 
     function switchSignTab(tab) {
       const oneClick = tab === "oneClick";
-
       els.tabOneClick.classList.toggle("active", oneClick);
       els.tabDraw.classList.toggle("active", !oneClick);
       els.oneClickPane.classList.toggle("hidden", !oneClick);
       els.drawPane.classList.toggle("hidden", oneClick);
-
-      if (!oneClick) {
-        requestAnimationFrame(() => resizeCanvas());
-      }
+      if (!oneClick) requestAnimationFrame(resizeCanvas);
     }
-
     els.tabOneClick.addEventListener("click", () => switchSignTab("oneClick"));
     els.tabDraw.addEventListener("click", () => switchSignTab("draw"));
 
     function renderSignatures(doc) {
       els.signatureList.innerHTML = "";
-
       const signatures = Array.isArray(doc.signatures) ? doc.signatures : [];
-
-      if (!signatures.length) {
-        els.signatureList.innerHTML = `<div class="muted small">No signatures yet.</div>`;
-        return;
-      }
-
-      signatures.forEach((signature) => {
+      if (!signatures.length) { els.signatureList.innerHTML = '<div class="muted small">No signatures yet.</div>'; return; }
+      signatures.forEach((s) => {
+        const where = s.placement ? `Page ${s.placement.page} · ${Math.round(s.placement.x * 100)}%, ${Math.round(s.placement.y * 100)}%` : "Auto-placed";
         const row = document.createElement("div");
         row.className = "signature-row";
-
         row.innerHTML = `
           <div class="meta">
-            <strong>${escapeHtml(signature.name || "Unknown signer")}</strong>
-            <small>
-              ${escapeHtml(signature.method === "gesture" ? "Drawn signature" : "One-click signature")}
-              · ${escapeHtml(formatDate(signature.signedAt))}
-            </small>
-            <small class="muted">${escapeHtml(signature.device || "")}</small>
+            <strong>${escapeHtml(s.name || "Unknown signer")}</strong>
+            <small>${escapeHtml(s.method === "gesture" ? "Drawn signature" : "One-click signature")} · ${escapeHtml(formatDate(s.signedAt))}</small>
+            <small class="muted">${escapeHtml(where)} · ${escapeHtml(s.device || "")}</small>
           </div>
-          <span class="signed">Signed</span>
-        `;
-
+          <span class="signed">Signed</span>`;
         els.signatureList.appendChild(row);
       });
     }
 
-    async function addSignature(signature) {
+    async function addSignature(sig) {
       if (!state.activeDocId) return;
-
       await docsCollection().doc(state.activeDocId).update({
-        signatures: firebase.firestore.FieldValue.arrayUnion(signature),
+        signatures: firebase.firestore.FieldValue.arrayUnion(sig),
         updatedAt: firebase.firestore.FieldValue.serverTimestamp()
       });
-
       toast("Signature saved.");
       closeModal("signModal");
       await loadDocs();
     }
 
-    function deviceInfo() {
-      const ua = navigator.userAgent || "Unknown device";
-      return `${ua} · ${new Date().toLocaleString()}`;
+    function deviceInfo() { return `${navigator.userAgent || "Unknown device"} · ${new Date().toLocaleString()}`; }
+
+    function typedInkDataUrl(name) {
+      const c = document.createElement("canvas");
+      c.width = 620; c.height = 150;
+      const ctx = c.getContext("2d");
+      ctx.clearRect(0, 0, c.width, c.height);
+      ctx.fillStyle = "#22080d";
+      ctx.font = 'italic 64px "Segoe Script","Brush Script MT","Comic Sans MS",cursive';
+      ctx.textBaseline = "middle";
+      ctx.fillText(name, 24, 78, 580);
+      return c.toDataURL("image/png");
+    }
+
+    function loadImage(src) {
+      return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = reject;
+        img.crossOrigin = "anonymous";
+        img.src = src;
+      });
     }
 
     els.oneClickSignBtn.addEventListener("click", async () => {
       const name = els.signerName.value.trim();
-
-      if (!name) {
-        toast("Enter signer name first.", "err");
-        return;
-      }
-
+      if (!name) { toast("Enter signer name first.", "err"); return; }
+      if (state.previewable && !state.placement) { toast("Tap the preview to choose where the signature goes first.", "err"); return; }
       els.oneClickSignBtn.disabled = true;
-
       try {
         await addSignature({
-          name,
-          email: state.user?.email || "",
-          uid: state.user?.uid || "",
-          method: "one-click",
-          device: deviceInfo(),
-          signedAt: new Date().toISOString()
+          name, email: state.user?.email || "", uid: state.user?.uid || "",
+          method: "one-click", device: deviceInfo(), signedAt: new Date().toISOString(),
+          ink: typedInkDataUrl(name), placement: state.placement
         });
       } catch (err) {
         console.error(err);
         toast(`Signature failed: ${err.message}`, "err");
-      } finally {
-        els.oneClickSignBtn.disabled = false;
-      }
+      } finally { els.oneClickSignBtn.disabled = false; }
     });
 
     function resizeCanvas() {
       const canvas = els.signatureCanvas;
       if (!canvas) return;
-
       const rect = canvas.parentElement.getBoundingClientRect();
+      if (!rect.width) return;
       const ratio = Math.max(window.devicePixelRatio || 1, 1);
-
       canvas.width = Math.floor(rect.width * ratio);
       canvas.height = Math.floor(240 * ratio);
       canvas.style.height = "240px";
-
       state.ctx = canvas.getContext("2d");
       state.ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+      state.ctx.clearRect(0, 0, canvas.width, canvas.height);
       state.ctx.lineWidth = 3;
       state.ctx.lineCap = "round";
       state.ctx.lineJoin = "round";
       state.ctx.strokeStyle = "#22080d";
     }
 
-    window.addEventListener("resize", () => {
-      if (!els.signModal.classList.contains("hidden")) {
-        resizeCanvas();
-      }
-    });
+    window.addEventListener("resize", () => { if (!document.getElementById("signModal").classList.contains("hidden")) resizeCanvas(); });
 
     function getPointerPosition(event) {
       const rect = els.signatureCanvas.getBoundingClientRect();
       const clientX = event.touches?.[0]?.clientX ?? event.clientX;
       const clientY = event.touches?.[0]?.clientY ?? event.clientY;
-
-      return {
-        x: clientX - rect.left,
-        y: clientY - rect.top
-      };
+      return { x: clientX - rect.left, y: clientY - rect.top };
     }
-
-    function startDrawing(event) {
-      event.preventDefault();
-      state.drawing = true;
-      state.lastPoint = getPointerPosition(event);
-    }
-
+    function startDrawing(event) { event.preventDefault(); state.drawing = true; state.hasInk = true; state.lastPoint = getPointerPosition(event); }
     function draw(event) {
       if (!state.drawing || !state.ctx) return;
       event.preventDefault();
-
-      const point = getPointerPosition(event);
-
+      const p = getPointerPosition(event);
       state.ctx.beginPath();
       state.ctx.moveTo(state.lastPoint.x, state.lastPoint.y);
-      state.ctx.lineTo(point.x, point.y);
+      state.ctx.lineTo(p.x, p.y);
       state.ctx.stroke();
-
-      state.lastPoint = point;
+      state.lastPoint = p;
     }
-
-    function stopDrawing(event) {
-      if (!state.drawing) return;
-      if (event) event.preventDefault();
-      state.drawing = false;
-      state.lastPoint = null;
-    }
+    function stopDrawing(event) { if (!state.drawing) return; if (event) event.preventDefault(); state.drawing = false; state.lastPoint = null; }
 
     els.signatureCanvas.addEventListener("pointerdown", startDrawing);
     els.signatureCanvas.addEventListener("pointermove", draw);
     window.addEventListener("pointerup", stopDrawing);
     window.addEventListener("pointercancel", stopDrawing);
-
     els.signatureCanvas.addEventListener("touchstart", startDrawing, { passive: false });
     els.signatureCanvas.addEventListener("touchmove", draw, { passive: false });
     els.signatureCanvas.addEventListener("touchend", stopDrawing);
@@ -1797,46 +884,107 @@
     els.clearCanvasBtn.addEventListener("click", () => {
       const canvas = els.signatureCanvas;
       if (!state.ctx) return;
-
+      state.ctx.save();
+      state.ctx.setTransform(1, 0, 0, 1, 0, 0);
       state.ctx.clearRect(0, 0, canvas.width, canvas.height);
+      state.ctx.restore();
+      state.hasInk = false;
     });
 
     els.saveDrawingBtn.addEventListener("click", async () => {
       const name = els.signerName.value.trim();
-
-      if (!name) {
-        toast("Enter signer name first.", "err");
-        return;
-      }
-
-      const canvas = els.signatureCanvas;
-      const dataUrl = canvas.toDataURL("image/png");
-
-      if (!dataUrl || dataUrl.length < 5000) {
-        toast("Draw a signature first.", "err");
-        return;
-      }
-
+      if (!name) { toast("Enter signer name first.", "err"); return; }
+      if (state.previewable && !state.placement) { toast("Tap the preview to choose where the signature goes first.", "err"); return; }
+      if (!state.hasInk) { toast("Draw a signature first.", "err"); return; }
       els.saveDrawingBtn.disabled = true;
-
       try {
         await addSignature({
-          name,
-            email: state.user?.email || "",
-          uid: state.user?.uid || "",
-          method: "gesture",
-          device: deviceInfo(),
-          signedAt: new Date().toISOString(),
-          ink: dataUrl
+          name, email: state.user?.email || "", uid: state.user?.uid || "",
+          method: "gesture", device: deviceInfo(), signedAt: new Date().toISOString(),
+          ink: els.signatureCanvas.toDataURL("image/png"), placement: state.placement
         });
       } catch (err) {
         console.error(err);
         toast(`Signature failed: ${err.message}`, "err");
-      } finally {
-        els.saveDrawingBtn.disabled = false;
-      }
+      } finally { els.saveDrawingBtn.disabled = false; }
     });
+
+    async function buildSignedCopy(doc) {
+      const sigs = (Array.isArray(doc.signatures) ? doc.signatures : []).filter((s) => s && s.ink);
+      if (!sigs.length) { toast("No signatures yet.", "err"); return; }
+      const mime = doc.fileType || "";
+      try {
+        let url;
+        if (mime.startsWith("image/")) url = await compositeImage(doc, sigs);
+        else if (mime === "application/pdf") url = await compositePdf(doc, sigs);
+        else { toast("This file type can't be stamped yet — signatures stay stored in the document record.", "err"); return; }
+        window.open(url, "_blank", "noopener");
+        toast("Signed copy opened in a new tab.");
+      } catch (err) {
+        console.error(err);
+        toast(`Could not build signed copy: ${err.message}`, "err");
+      }
+    }
+
+    async function compositeImage(doc, sigs) {
+      const base = await loadImage(doc.publicUrl);
+      const c = document.createElement("canvas");
+      c.width = base.naturalWidth; c.height = base.naturalHeight;
+      const ctx = c.getContext("2d");
+      ctx.drawImage(base, 0, 0);
+      for (let i = 0; i < sigs.length; i++) {
+        const ink = await loadImage(sigs[i].ink);
+        const w = Math.max(140, c.width * 0.22);
+        const h = w * (ink.naturalHeight / ink.naturalWidth);
+        let x, y;
+        if (sigs[i].placement) {
+          x = sigs[i].placement.x * c.width - w / 2;
+          y = sigs[i].placement.y * c.height - h / 2;
+        } else {
+          x = c.width - w - 24;
+          y = c.height - h - 24 - i * 14;
+        }
+        ctx.drawImage(ink, x, y, w, h);
+      }
+      const isJpeg = (doc.fileType || "").includes("jpeg") || (doc.fileType || "").includes("jpg");
+      const blob = await new Promise((r) => c.toBlob(r, isJpeg ? "image/jpeg" : "image/png", 0.92));
+      const url = URL.createObjectURL(blob);
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+      return url;
+    }
+
+    async function compositePdf(doc, sigs) {
+      const res = await fetch(doc.publicUrl);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const bytes = await res.arrayBuffer();
+      const pdfDoc = await PDFLib.PDFDocument.load(bytes);
+      const pages = pdfDoc.getPages();
+      for (let i = 0; i < sigs.length; i++) {
+        const inkBytes = await (await fetch(sigs[i].ink)).arrayBuffer();
+        const png = await pdfDoc.embedPng(inkBytes);
+        const pageNum = sigs[i].placement?.page;
+        const pageIndex = (pageNum >= 1 && pageNum <= pages.length) ? pageNum - 1 : pages.length - 1;
+        const page = pages[pageIndex];
+        const { width, height } = page.getSize();
+        const w = Math.min(190, width * 0.3);
+        const h = w * (png.height / png.width);
+        let x, y;
+        if (sigs[i].placement) {
+          x = sigs[i].placement.x * width - w / 2;
+          y = height - sigs[i].placement.y * height - h / 2;
+        } else {
+          x = width - w - 42;
+          y = 42 + i * 16;
+        }
+        page.drawImage(png, { x, y, width: w, height: h });
+      }
+      const out = await pdfDoc.save();
+      const blob = new Blob([out], { type: "application/pdf" });
+      const url = URL.createObjectURL(blob);
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+      return url;
+    }
   </script>
 </body>
 </html>
-
+<!-- SPIDERWEB-DROP15-END -->
