@@ -623,6 +623,43 @@
       els.docGrid.appendChild(card);
     });
   };
+    // ---- Self-signup (creates pending staff account)
+  document.querySelector("#authView .auth-card").insertAdjacentHTML("beforeend", `
+    <div class="divider" style="margin:18px 0"></div>
+    <h3 style="margin:0;font-family:var(--font-display);letter-spacing:.06em;">JOIN THE CREW</h3>
+    <p class="muted small" style="margin:6px 0 14px">Creates a staff account that stays locked until Amanuel approves it.</p>
+    <form id="signupForm">
+      <div class="field"><label for="signupName">Full name</label><input id="signupName" required placeholder="Example: Zidan Ali" /></div>
+      <div class="field"><label for="signupEmail">Email</label><input id="signupEmail" type="email" required placeholder="you@spiderweb.lol" /></div>
+      <div class="field"><label for="signupPassword">Password (6+ characters)</label><input id="signupPassword" type="password" required minlength="6" /></div>
+      <button id="signupBtn" class="btn secondary" type="submit" style="width:100%">Create account</button>
+    </form>
+  `);
+
+  document.getElementById("signupForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const name = document.getElementById("signupName").value.trim();
+    const email = document.getElementById("signupEmail").value.trim();
+    const pass = document.getElementById("signupPassword").value;
+    if (pass.length < 6) { toast("Password needs 6+ characters.", "err"); return; }
+    const btn = document.getElementById("signupBtn");
+    btn.disabled = true;
+    try {
+      const cred = await auth.createUserWithEmailAndPassword(email, pass);
+      toast("Account created — waiting for admin approval.");
+      const uid = cred.user.uid;
+      for (let i = 0; i < 12; i++) {
+        const snap = await db.collection("c").doc("users").collection("list").doc(uid).get();
+        if (snap.exists) break;
+        await new Promise((r) => setTimeout(r, 250));
+      }
+      await db.collection("c").doc("users").collection("list").doc(uid).update({ name });
+    } catch (err) {
+      console.error(err);
+      if (err.code === "auth/email-already-in-use") toast("That email already has an account — log in above.", "err");
+      else toast(err.message || "Signup failed.", "err");
+    } finally { btn.disabled = false; }
+  });
   console.log("SPIDERWEB Drop 2 loaded.");
 })();
 /* SPIDERWEB-DROP2-END */
