@@ -527,6 +527,95 @@
   window.addEventListener("keydown", (e) => {
     if (e.key === "Escape") ["taskModal", "customerModal", "attachModal"].forEach((id) => closeModal(id));
   });
+    // ---- Admin-signature-required + upgraded doc badges
+  const chkStyle = document.createElement("style");
+  chkStyle.textContent = `.chk{display:flex;align-items:center;gap:10px;text-transform:none;letter-spacing:0;font-size:.95rem;color:var(--ink)} .chk input{width:20px;height:20px;accent-color:var(--red)}`;
+  document.head.appendChild(chkStyle);
+
+  document.getElementById("docRequired").closest(".field").insertAdjacentHTML("afterend", `
+    <div class="field">
+      <label class="chk" for="docAdminReq"><input id="docAdminReq" type="checkbox" checked /> Admin signature required</label>
+    </div>`);
+
+  const realDocsCollection = docsCollection;
+  window.docsCollection = function () {
+    const col = realDocsCollection();
+    return new Proxy(col, {
+      get(target, prop) {
+        if (prop === "add") {
+          return (data) => {
+            data.adminRequired = window.__adminReqPending === true;
+            window.__adminReqPending = false;
+            return target.add(data);
+          };
+        }
+        const v = Reflect.get(target, prop);
+        return typeof v === "function" ? v.bind(target) : v;
+      }
+    });
+  };
+
+  document.getElementById("uploadForm").addEventListener("submit", () => {
+    window.__adminReqPending = document.getElementById("docAdminReq").checked;
+  }, true);
+
+  function adminEmails() {
+    const set = new Set(["amanu@spiderweb.lol"]);
+    (state.users || []).forEach((u) => { if (u.role === "admin") set.add((u.email || "").toLowerCase()); });
+    return set;
+  }
+
+  window.renderDocs = function () {
+    const term = els.docSearch.value.trim().toLowerCase();
+    els.docGrid.innerHTML = "";
+    const docs = state.docs.filter((doc) => {
+      if (!term) return true;
+      const haystack = [doc.title, doc.fileName, doc.notes, doc.uploadedByEmail, doc.uploadedByName, (doc.signatures || []).map((s) => s.name).join(" ")].join(" ").toLowerCase();
+      return haystack.includes(term);
+    });
+    if (!docs.length) { els.docsEmpty.classList.remove("hidden"); return; }
+    els.docsEmpty.classList.add("hidden");
+    const isAdminUser = isAdmin();
+    docs.forEach((doc) => {
+      const sigs = Array.isArray(doc.signatures) ? doc.signatures : [];
+      const count = sigs.length;
+      const req = Math.max(1, Number(doc.requiredSignatures) || 1);
+      const needsAdmin = !!doc.adminRequired;
+      const hasAdmin = sigs.some((s) => adminEmails().has((s.email || "").toLowerCase()));
+      const fully = count >= req && (!needsAdmin || hasAdmin);
+      const badge = fully
+        ? `<span class="signed">Fully signed ${count}/${req}</span>`
+        : count > 0
+          ? `<span class="pending">Signed ${count}/${req}${needsAdmin && !hasAdmin ? " + admin" : ""}</span>`
+          : `<span class="pending">Awaiting signature</span>`;
+      const deleteBtn = isAdminUser ? '<button class="btn ghost small" data-action="delete" type="button">Delete</button>' : "";
+      const card = document.createElement("article");
+      card.className = "doc-card";
+      card.innerHTML = `
+        <div class="doc-top"><span class="doc-type">${escapeHtml((doc.fileType || "file").split("/")[1] || "file")}</span>${badge}</div>
+        <h3 class="doc-title">${escapeHtml(doc.title || doc.fileName || "Untitled document")}</h3>
+        <div class="doc-meta">
+          <span>File: ${escapeHtml(doc.fileName || "unknown")}</span>
+          <span>Size: ${escapeHtml(formatBytes(doc.fileSize)) || "unknown"}</span>
+          <span>Uploaded: ${escapeHtml(formatDate(doc.createdAt))}</span>
+          <span>By: ${escapeHtml(doc.uploadedByName || doc.uploadedByEmail || "unknown")}</span>
+          ${needsAdmin ? `<span>${hasAdmin ? "Admin ink: yes" : "Admin ink: required"}</span>` : ""}
+        </div>
+        <div class="divider"></div>
+        <div class="doc-actions">
+          <button class="btn small" data-action="sign" type="button">Sign</button>
+          <button class="btn secondary small" data-action="signed" type="button" ${count === 0 ? "disabled" : ""}>Signed copy</button>
+          <button class="btn ghost small" data-action="download" type="button">Download</button>
+          ${deleteBtn}
+        </div>`;
+      card.querySelector('[data-action="sign"]').addEventListener("click", () => openSignModal(doc.id));
+      card.querySelector('[data-action="signed"]').addEventListener("click", () => buildSignedCopy(doc));
+      card.querySelector('[data-action="download"]').addEventListener("click", () => downloadDocument(doc));
+      const del = card.querySelector('[data-action="delete"]');
+      if (del) del.addEventListener("click", () => deleteDocument(doc));
+      els.docGrid.appendChild(card);
+    });
+  };
   console.log("SPIDERWEB Drop 2 loaded.");
 })();
 /* SPIDERWEB-DROP2-END */
