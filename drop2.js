@@ -660,6 +660,29 @@
       else toast(err.message || "Signup failed.", "err");
     } finally { btn.disabled = false; }
   });
+    // ---- Collapse signup behind a "Join The Crew" link
+  (function () {
+    const card = document.querySelector("#authView .auth-card");
+    if (!card) return;
+    const form = document.getElementById("signupForm");
+    const h3 = card.querySelector("h3");
+    const para = card.querySelector("p.muted");
+    const divider = card.querySelector(".divider");
+    if (!form || !h3) return;
+    [form, h3, para, divider].forEach((el) => { if (el) el.classList.add("hidden"); });
+    const toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.className = "btn ghost";
+    toggle.style.width = "100%";
+    toggle.style.marginTop = "14px";
+    toggle.textContent = "Join The Crew";
+    card.appendChild(toggle);
+    toggle.addEventListener("click", () => {
+      const reveal = form.classList.contains("hidden");
+      [form, h3, para, divider].forEach((el) => { if (el) el.classList.toggle("hidden", !reveal); });
+      toggle.textContent = reveal ? "Hide signup" : "Join The Crew";
+    });
+  })();
   console.log("SPIDERWEB Drop 2 loaded.");
 })();
 /* SPIDERWEB-DROP2-END */
