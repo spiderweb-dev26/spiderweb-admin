@@ -683,6 +683,12 @@
       toggle.textContent = reveal ? "Hide signup" : "Join The Crew";
     });
   })();
+    // ---- Nav order: Dashboard above Documents
+  (function () {
+    const dashBtn = navButtons.find((b) => b.dataset.view === "dashboard");
+    const docsBtn = navButtons.find((b) => b.dataset.view === "documents");
+    if (dashBtn && docsBtn) docsBtn.parentNode.insertBefore(dashBtn, docsBtn);
+  })();
   console.log("SPIDERWEB Drop 2 loaded.");
 })();
 /* SPIDERWEB-DROP2-END */
