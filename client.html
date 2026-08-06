@@ -188,4 +188,169 @@
         loadPayments();
         startChat();
       } catch (err) {
-        console.error(err
+        console.error(err);
+        toast("Could not load your portal: " + err.message, "err");
+        show("none");
+      }
+    });
+
+    async function loadCustomer() {
+      if (!state.client.customerId) return;
+      state.roomId = "cust-" + state.client.customerId;
+      try {
+        const snap = await db.collection("c").doc("customers").collection("list").doc(state.client.customerId).get();
+        if (snap.exists) {
+          state.customer = snap.data();
+          const body = [];
+          body.push(`<div>Customer: <strong>${esc(state.customer.name)}</strong>${state.customer.domain ? ` · ${esc(state.customer.domain)}` : ""}</div>`);
+          if (state.customer.contractExpiry) body.push(`<div class="small">Contract runs until ${esc(state.customer.contractExpiry)}</div>`);
+          if (state.customer.contractUrl) body.push(`<div style="margin-top:8px"><a class="link" target="_blank" rel="noopener" href="${esc(state.customer.contractUrl)}">📄 View your signed contract</a></div>`);
+          $("contractBody").innerHTML = body.join("");
+        }
+      } catch (e) { console.warn(e); }
+    }
+
+    async function loadPayments() {
+      const box = $("payList");
+      box.innerHTML = '<div class="muted small">Loading…</div>';
+      try {
+        const snap = await db.collection("c").doc("payments").collection("list")
+          .where("customerId", "==", state.client.customerId || "__none__").get();
+        const pays = snap.docs.map((d) => ({ id: d.id, ...d.data() }))
+          .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
+        box.innerHTML = "";
+        if (!pays.length) { box.innerHTML = '<div class="muted small">No payment requests yet.</div>'; return; }
+        pays.forEach((p) => {
+          const ap = p.approvals || [];
+          const card = document.createElement("div");
+          card.className = "pay-card";
+          card.innerHTML = `
+            <div class="pay-top"><strong>${esc(p.title)}</strong>${ap.length >= 2 ? '<span class="badge ok">Authorized</span>' : '<span class="badge wait">Processing</span>'}</div>
+            <div class="amt">${esc(Number(p.amount || 0).toLocaleString())} ETB</div>
+            ${p.bank ? `<div class="meta">Bank: ${esc(p.bank)}</div>` : ""}
+            ${p.accountName ? `<div class="meta">Account name: ${esc(p.accountName)}</div>` : ""}
+            ${p.accountNumber ? `<div class="meta">Account number: ${esc(p.accountNumber)}</div>` : ""}
+            <div class="rcpt">
+              ${(p.receipts || []).map((r) => `<div class="meta">🧾 ${esc(r.ref)} · ${esc(fmtDate(r.at))}${r.fileUrl ? ` · <a class="link" target="_blank" rel="noopener" href="${esc(r.fileUrl)}">${esc(r.fileName || "file")}</a>` : ""}</div>`).join("") || '<div class="muted small">No receipts yet.</div>'}
+            </div>
+            <div style="margin-top:10px"><button class="btn small" type="button" data-rcpt>Submit receipt</button></div>`;
+          card.querySelector("[data-rcpt]").addEventListener("click", () => {
+            state.payTarget = p;
+            $("rcptRef").value = "";
+            $("rcptFile").value = "";
+            $("receiptModal").classList.remove("hidden");
+          });
+          box.appendChild(card);
+        });
+      } catch (err) {
+        console.error(err);
+        box.innerHTML = '<div class="muted small">Could not load payments.</div>';
+      }
+    }
+
+    $("rcptCancel").addEventListener("click", () => $("receiptModal").classList.add("hidden"));
+    $("rcptSave").addEventListener("click", async () => {
+      const ref = $("rcptRef").value.trim();
+      if (!ref) { toast("Enter the transfer reference.", "err"); return; }
+      const file = $("rcptFile").files && $("rcptFile").files[0];
+      try {
+        let fileMeta = {};
+        if (file) {
+          const safe = file.name.replace(/[^\w.\-]+/g, "-");
+          const path = "receipts/" + state.user.uid + "/" + Date.now() + "-" + safe;
+          const up = await sb.storage.from(BUCKET).upload(path, file, { cacheControl: "3600", upsert: false });
+          if (up.error) throw up.error;
+          fileMeta = { fileUrl: sb.storage.from(BUCKET).getPublicUrl(path).data.publicUrl, fileName: file.name, fileType: file.type || "file" };
+        }
+        await db.collection("c").doc("payments").collection("list").doc(state.payTarget.id).update({
+          receipts: firebase.firestore.FieldValue.arrayUnion(Object.assign({
+            ref, at: new Date().toISOString(), byName: state.client.name || state.user.email
+          }, fileMeta))
+        });
+        await db.collection("c").doc("chat").collection(state.roomId).add({
+          text: `🧾 Receipt submitted for "${state.payTarget.title}" — ref: ${ref}`,
+          by: state.user.email, byName: state.client.name || "Client", uid: state.user.uid, at: new Date().toISOString()
+        });
+        $("receiptModal").classList.add("hidden");
+        toast("Receipt submitted. The studio has been notified.", "ok");
+        loadPayments();
+      } catch (err) {
+        console.error(err);
+        toast("Receipt failed: " + err.message, "err");
+      }
+    });
+
+    function startChat() {
+      if (!state.roomId) return;
+      if (state.chatUnsub) state.chatUnsub();
+      state.chatUnsub = db.collection("c").doc("chat").collection(state.roomId)
+        .orderBy("at", "asc")
+        .onSnapshot((snap) => {
+          const box = $("chatMsgs");
+          box.innerHTML = "";
+          snap.forEach((d) => {
+            const m = d.data();
+            const mine = m.uid === state.user.uid;
+            const div = document.createElement("div");
+            div.className = "msg" + (mine ? " me" : "");
+            let html = "";
+            if (m.fileUrl) {
+              html += (m.fileType || "").startsWith("image/")
+                ? `<a href="${esc(m.fileUrl)}" target="_blank" rel="noopener"><img src="${esc(m.fileUrl)}" style="max-width:200px;border-radius:10px;display:block;margin-bottom:6px" alt=""></a>`
+                : `<a class="link" href="${esc(m.fileUrl)}" target="_blank" rel="noopener">📎 ${esc(m.fileName || "file")}</a>`;
+            }
+            if (m.text) html += esc(m.text);
+            html += `<small>${esc(m.byName || m.by || "")} · ${esc(fmtDate(m.at))}${m.editedAt ? " · edited" : ""}</small>`;
+            div.innerHTML = html;
+            if (mine) {
+              const bar = document.createElement("div");
+              bar.className = "msg-actions";
+              bar.innerHTML = '<button class="msg-btn" type="button" data-m="edit">✎</button><button class="msg-btn" type="button" data-m="del">🗑</button>';
+              div.appendChild(bar);
+              bar.querySelector('[data-m="edit"]').addEventListener("click", () => {
+                const t = prompt("Edit message:", m.text || "");
+                if (t === null) return;
+                const tt = t.trim();
+                if (!tt) { toast("Message can't be empty.", "err"); return; }
+                db.collection("c").doc("chat").collection(state.roomId).doc(d.id).update({ text: tt, editedAt: new Date().toISOString() });
+              });
+              bar.querySelector('[data-m="del"]').addEventListener("click", async () => {
+                if (!confirm("Delete this message?")) return;
+                await db.collection("c").doc("chat").collection(state.roomId).doc(d.id).delete();
+              });
+            }
+            box.appendChild(div);
+          });
+          box.scrollTop = box.scrollHeight;
+        }, (err) => { console.error(err); toast("Chat error: " + err.message, "err"); });
+    }
+
+    $("chatFileBtn").addEventListener("click", () => $("chatFile").click());
+    $("chatFile").addEventListener("change", () => { state.pendingFile = $("chatFile").files && $("chatFile").files[0] ? $("chatFile").files[0] : null; });
+
+    $("chatForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const text = $("chatText").value.trim();
+      if ((!text && !state.pendingFile) || !state.roomId) return;
+      $("chatText").value = "";
+      const file = state.pendingFile;
+      state.pendingFile = null;
+      $("chatFile").value = "";
+      try {
+        let fileMeta = {};
+        if (file) {
+          const safe = file.name.replace(/[^\w.\-]+/g, "-");
+          const path = "chat/" + state.user.uid + "/" + Date.now() + "-" + safe;
+          const up = await sb.storage.from(BUCKET).upload(path, file, { cacheControl: "3600", upsert: false });
+          if (up.error) throw up.error;
+          fileMeta = { fileUrl: sb.storage.from(BUCKET).getPublicUrl(path).data.publicUrl, fileName: file.name, fileType: file.type || "file" };
+        }
+        await db.collection("c").doc("chat").collection(state.roomId).add(Object.assign({
+          text, by: state.user.email, byName: state.client.name || "Client", uid: state.user.uid, at: new Date().toISOString()
+        }, fileMeta));
+      } catch (err) { console.error(err); toast("Send failed: " + err.message, "err"); }
+    });
+  </script>
+</body>
+</html>
+<!-- SPIDERWEB-CLIENT-END -->
