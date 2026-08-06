@@ -26,6 +26,7 @@
     .btn:disabled{opacity:.5;cursor:not-allowed}
     .btn.ghost{background:rgba(27,11,16,.72);border:2px dashed var(--line);color:var(--ink)}
     .btn.small{padding:8px 12px;font-size:.85rem}
+    .linkbtn{background:none;border:none;color:var(--blue);cursor:pointer;font-size:.85rem;padding:6px}
     header{position:sticky;top:0;z-index:20;display:flex;justify-content:space-between;align-items:center;gap:12px;padding:14px 18px;border-bottom:2px dashed var(--line);background:rgba(18,6,9,.88);backdrop-filter:blur(10px)}
     header h1{margin:0;font-size:1.4rem}
     header h1 span{color:var(--red)}
@@ -37,6 +38,7 @@
     .badge{display:inline-block;padding:5px 10px;border-radius:999px;font-size:.75rem;font-weight:800;text-transform:uppercase;letter-spacing:.06em;border:1px solid transparent}
     .badge.ok{color:var(--green);border-color:rgba(125,255,160,.35);background:rgba(125,255,160,.08)}
     .badge.wait{color:#ffd76e;border-color:rgba(255,215,110,.35);background:rgba(255,215,110,.08)}
+    .badge.hot{color:#ff8f8f;border-color:rgba(230,36,46,.4);background:rgba(230,36,46,.12)}
     .pay-card{border:2px solid var(--line);border-radius:14px;padding:14px;margin-bottom:14px;background:rgba(18,6,9,.35)}
     .pay-top{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center}
     .amt{font-family:"Bangers",cursive;font-size:1.5rem;margin:6px 0}
@@ -68,6 +70,7 @@
         <div class="field"><label for="loginPassword">Password</label><input id="loginPassword" type="password" required /></div>
         <button id="loginBtn" class="btn" type="submit" style="width:100%">Log in</button>
       </form>
+      <button id="forgotBtn" class="linkbtn" type="button">Forgot password?</button>
     </section>
   </main>
 
@@ -76,6 +79,14 @@
       <h2>NO PORTAL <span>ACCOUNT</span></h2>
       <p>This login has no client account. Ask Spiderweb to create one for you.</p>
       <button id="naSignOut" class="btn ghost" type="button">Sign out</button>
+    </section>
+  </main>
+
+  <main id="blockedView" class="shell hidden">
+    <section class="card">
+      <h2>ACCOUNT <span>BLOCKED</span></h2>
+      <p>Your portal access was blocked by the studio. Contact us to restore it.</p>
+      <button id="blSignOut" class="btn ghost" type="button">Sign out</button>
     </section>
   </main>
 
@@ -88,7 +99,11 @@
       </div>
     </header>
     <div class="wrap">
-      <section class="panel" id="contractPanel" class="hidden">
+      <section class="panel" id="apprPanel">
+        <h2>Approvals needed from you</h2>
+        <div id="apprList" class="meta">Nothing needs your signature.</div>
+      </section>
+      <section class="panel">
         <h2>Your contract</h2>
         <div id="contractBody" class="meta"></div>
       </section>
@@ -159,9 +174,22 @@
       return String(s || "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
     }
     function fmtDate(v) { try { return new Intl.DateTimeFormat("en-US", { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(v)); } catch (e) { return String(v || ""); } }
+    function deviceInfo() { return (navigator.userAgent || "") + " · " + new Date().toLocaleString(); }
+    function typedInk(name) {
+      const c = document.createElement("canvas");
+      c.width = 620; c.height = 150;
+      const ctx = c.getContext("2d");
+      ctx.clearRect(0, 0, c.width, c.height);
+      ctx.fillStyle = "#22080d";
+      ctx.font = 'italic 64px "Segoe Script","Brush Script MT","Comic Sans MS",cursive';
+      ctx.textBaseline = "middle";
+      ctx.fillText(name, 24, 78, 580);
+      return c.toDataURL("image/png");
+    }
     function show(view) {
       $("loginView").classList.toggle("hidden", view !== "login");
       $("noAccountView").classList.toggle("hidden", view !== "none");
+      $("blockedView").classList.toggle("hidden", view !== "blocked");
       $("appView").classList.toggle("hidden", view !== "app");
     }
 
@@ -172,8 +200,19 @@
       catch (err) { toast(err.message || "Login failed.", "err"); }
       finally { $("loginBtn").disabled = false; }
     });
+
+    $("forgotBtn").addEventListener("click", async () => {
+      const email = prompt("Enter your portal email to receive a reset link:");
+      if (!email) return;
+      try {
+        await auth.sendPasswordResetEmail(email.trim());
+        toast("Reset email sent — check your inbox.", "ok");
+      } catch (err) { toast(err.message || "Could not send reset email.", "err"); }
+    });
+
     $("signOutBtn").addEventListener("click", () => auth.signOut());
     $("naSignOut").addEventListener("click", () => auth.signOut());
+    $("blSignOut").addEventListener("click", () => auth.signOut());
 
     auth.onAuthStateChanged(async (user) => {
       state.user = user;
@@ -182,10 +221,12 @@
         const snap = await db.collection("c").doc("clients").collection("list").doc(user.uid).get();
         if (!snap.exists) { show("none"); return; }
         state.client = snap.data();
+        if (state.client.status === "blocked") { show("blocked"); return; }
         $("whoami").textContent = state.client.name || user.email;
         show("app");
         loadCustomer();
         loadPayments();
+        loadApprovals();
         startChat();
       } catch (err) {
         console.error(err);
@@ -200,14 +241,67 @@
       try {
         const snap = await db.collection("c").doc("customers").collection("list").doc(state.client.customerId).get();
         if (snap.exists) {
-          state.customer = snap.data();
+          state.customer = { id: snap.id, ...snap.data() };
           const body = [];
           body.push(`<div>Customer: <strong>${esc(state.customer.name)}</strong>${state.customer.domain ? ` · ${esc(state.customer.domain)}` : ""}</div>`);
           if (state.customer.contractExpiry) body.push(`<div class="small">Contract runs until ${esc(state.customer.contractExpiry)}</div>`);
           if (state.customer.contractUrl) body.push(`<div style="margin-top:8px"><a class="link" target="_blank" rel="noopener" href="${esc(state.customer.contractUrl)}">📄 View your signed contract</a></div>`);
+          if (state.customer.delRequest) body.push(`<div class="small" style="color:#ff8f8f">The studio requested to cancel this contract — see Approvals above.</div>`);
           $("contractBody").innerHTML = body.join("");
         }
       } catch (e) { console.warn(e); }
+    }
+
+    function delDone(dr) {
+      return dr && Array.isArray(dr.approvals) && dr.approvals.some((s) => s.role === "admin") && dr.approvals.some((s) => s.role === "client");
+    }
+
+    async function loadApprovals() {
+      const items = [];
+      const myEmail = (state.user.email || "").toLowerCase();
+      if (state.client.delRequest && !delDone(state.client.delRequest)) {
+        items.push({ kind: "membership", label: "Cancel your portal membership", id: state.user.uid, col: "clients", doc: state.user.uid, dr: state.client.delRequest });
+      }
+      if (state.customer && state.customer.delRequest && !delDone(state.customer.delRequest)) {
+        items.push({ kind: "customer", label: "Cancel contract — " + (state.customer.name || ""), id: state.customer.id, col: "customers", doc: state.customer.id, dr: state.customer.delRequest });
+      }
+      try {
+        const snap = await db.collection("c").doc("payments").collection("list")
+          .where("customerId", "==", state.client.customerId || "__none__").get();
+        snap.forEach((d) => {
+          const p = d.data();
+          if (p.delRequest && (p.delRequest.clientEmail || "").toLowerCase() === myEmail && !delDone(p.delRequest)) {
+            items.push({ kind: "payment", label: "Delete payment — " + (p.title || ""), id: d.id, col: "payments", doc: d.id, dr: p.delRequest });
+          }
+        });
+      } catch (e) { console.warn(e); }
+      const box = $("apprList");
+      if (!items.length) { box.innerHTML = "Nothing needs your signature."; return; }
+      box.innerHTML = "";
+      items.forEach((it) => {
+        const row = document.createElement("div");
+        row.className = "pay-card";
+        row.innerHTML = `
+          <div class="pay-top"><strong>${esc(it.label)}</strong><span class="badge hot">Needs your ink</span></div>
+          <div class="meta">Requested by ${esc(it.dr.requestedBy || "the studio")} · ${esc(fmtDate(it.dr.requestedAt))}</div>
+          <div style="margin-top:10px"><button class="btn small" type="button">Sign to approve</button></div>`;
+        row.querySelector("button").addEventListener("click", async () => {
+          if (!confirm("Sign to approve this action? It will then be carried out.")) return;
+          try {
+            const sig = { name: state.client.name || myEmail, email: myEmail, uid: state.user.uid, role: "client", method: "one-click", device: deviceInfo(), signedAt: new Date().toISOString(), ink: typedInk(state.client.name || myEmail) };
+            const path = it.col === "clients"
+              ? db.collection("c").doc("clients").collection("list").doc(it.doc)
+              : it.col === "customers"
+                ? db.collection("c").doc("customers").collection("list").doc(it.doc)
+                : db.collection("c").doc("payments").collection("list").doc(it.doc);
+            await path.update({ "delRequest.approvals": firebase.firestore.FieldValue.arrayUnion(sig) });
+            await path.delete();
+            toast("Signed — the request was carried out.", "ok");
+            loadApprovals(); loadPayments(); loadCustomer();
+          } catch (err) { console.error(err); toast("Sign failed: " + err.message, "err"); }
+        });
+        box.appendChild(row);
+      });
     }
 
     async function loadPayments() {
@@ -225,7 +319,7 @@
           const card = document.createElement("div");
           card.className = "pay-card";
           card.innerHTML = `
-            <div class="pay-top"><strong>${esc(p.title)}</strong>${ap.length >= 2 ? '<span class="badge ok">Authorized</span>' : '<span class="badge wait">Processing</span>'}</div>
+            <div class="pay-top"><strong>${esc(p.title)}</strong>${p.delRequest ? '<span class="badge hot">Deletion pending</span>' : ap.length >= 2 ? '<span class="badge ok">Authorized</span>' : '<span class="badge wait">Processing</span>'}</div>
             <div class="amt">${esc(Number(p.amount || 0).toLocaleString())} ETB</div>
             ${p.bank ? `<div class="meta">Bank: ${esc(p.bank)}</div>` : ""}
             ${p.accountName ? `<div class="meta">Account name: ${esc(p.accountName)}</div>` : ""}
