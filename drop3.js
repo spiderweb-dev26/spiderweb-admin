@@ -1,4 +1,4 @@
-/* SPIDERWEB DROP 3 — Payments (countersign) + Crew chat v2 (edit/delete/files) + Drop4 customer link */
+/* SPIDERWEB DROP 3 v3 — Payments (2-ink auth + 2-ink delete) + Crew chat v2 */
 (function () {
   "use strict";
   if (window.__DROP3__) return;
@@ -58,7 +58,7 @@
   mainEl.insertAdjacentHTML("beforeend", `
     <section class="panel hidden" id="paymentsView">
       <div class="page-head">
-        <div><h2>Payments</h2><p>Bank-transfer & payment authorizations. High-stake: two inks required — one of them an admin countersign.</p></div>
+        <div><h2>Payments</h2><p>Authorizations need TWO inks (one admin). Deleting an AUTHORIZED payment also needs TWO inks.</p></div>
         <button id="newPaymentBtn" class="btn" type="button">New payment auth</button>
       </div>
       <div class="content">
@@ -109,7 +109,7 @@
           <button id="payTabDraw" class="sign-tab" type="button">Draw</button>
         </div>
         <section id="payOnePane" class="sign-pad">
-          <p class="muted small">Records name, device, date and time as an authorization ink.</p>
+          <p class="muted small">Records name, device, date and time as an ink.</p>
           <button id="payOneBtn" class="btn" type="button">Sign with one click</button>
         </section>
         <section id="payDrawPane" class="sign-pad hidden">
@@ -137,6 +137,9 @@
 
   // ============ PAYMENTS ============
   state.payments = state.payments || [];
+  let payTarget = null;
+  let payMode = "pay"; // "pay" | "delete"
+  let payDrawing = false, payLast = null, payCtx = null, payHasInk = false;
 
   async function loadPayments() {
     try {
@@ -167,15 +170,21 @@
     if (!pays.length) { empty.classList.remove("hidden"); return; }
     empty.classList.add("hidden");
     const admins = adminEmails3();
+    const me = (state.user && state.user.email || "").toLowerCase();
     pays.forEach((p) => {
       const st = payStatus(p);
       const ap = Array.isArray(p.approvals) ? p.approvals : [];
+      const delAp = Array.isArray(p.deleteApprovals) ? p.deleteApprovals : [];
+      const signedDel = delAp.some((s) => (s.email || "").toLowerCase() === me);
+      const badge = (st.key === "ok" && delAp.length > 0)
+        ? `<span class="overdue">Delete ${delAp.length}/2 inks</span>`
+        : st.html;
       const row = document.createElement("div");
       row.className = "task-row";
       row.innerHTML = `
         <div class="task-top">
           <span class="task-title">${escapeHtml(p.title)}</span>
-          ${st.html}
+          ${badge}
         </div>
         <div class="pay-amount">${escapeHtml(Number(p.amount || 0).toLocaleString())} ETB</div>
         <div class="task-meta">
@@ -192,10 +201,16 @@
         <div class="doc-actions">
           <button class="btn small" data-act="sign" type="button">Sign / countersign</button>
           <button class="btn secondary small" data-act="letter" type="button" ${st.key === "ok" ? "" : "disabled"}>Authorization letter</button>
-          ${isAdmin3() ? '<button class="btn ghost small" data-act="del" type="button">Delete</button>' : ""}
+          ${st.key === "ok" && delAp.length === 0 && isAdmin3() ? '<button class="btn ghost small" data-act="reqdel" type="button">Request delete</button>' : ""}
+          ${st.key === "ok" && delAp.length === 1 && !signedDel ? '<button class="btn small" data-act="signdel" type="button">Countersign delete</button>' : ""}
+          ${st.key !== "ok" && isAdmin3() ? '<button class="btn ghost small" data-act="del" type="button">Delete</button>' : ""}
         </div>`;
-      row.querySelector('[data-act="sign"]').addEventListener("click", () => openPaySign(p));
+      row.querySelector('[data-act="sign"]').addEventListener("click", () => openPaySign(p, "pay"));
       row.querySelector('[data-act="letter"]').addEventListener("click", () => openLetter(p));
+      const rd = row.querySelector('[data-act="reqdel"]');
+      if (rd) rd.addEventListener("click", () => openPaySign(p, "delete"));
+      const sd = row.querySelector('[data-act="signdel"]');
+      if (sd) sd.addEventListener("click", () => openPaySign(p, "delete"));
       const del = row.querySelector('[data-act="del"]');
       if (del) del.addEventListener("click", async () => {
         if (!confirm("Delete this payment authorization?")) return;
@@ -221,6 +236,7 @@
         customerId: window.__payCustomerId || "",
         customerName: window.__payCustomerName || "",
         approvals: [],
+        deleteApprovals: [],
         createdBy: state.user ? state.user.email : "",
         createdByName: state.profile ? state.profile.name : "",
         createdAt: new Date().toISOString()
@@ -232,12 +248,11 @@
     } catch (err) { toast("Payment failed: " + err.message, "err"); }
   });
 
-  let payTarget = null;
-  let payDrawing = false, payLast = null, payCtx = null, payHasInk = false;
-
-  function openPaySign(p) {
+  function openPaySign(p, mode) {
     payTarget = p.id;
-    document.getElementById("paySignTitle").textContent = p.title || "Sign payment";
+    payMode = mode || "pay";
+    document.getElementById("paySignTitle").textContent =
+      (payMode === "delete" ? "Authorize DELETE: " : "") + (p.title || "Sign payment");
     document.getElementById("paySignName").value = state.profile ? state.profile.name : "";
     payTabSwitch("one");
     openModal("paySignModal");
@@ -304,28 +319,46 @@
     return c.toDataURL("image/png");
   }
 
-  async function addPayApproval(sig) {
-    if (!payTarget) return;
-    await paymentsCol().doc(payTarget).update({ approvals: firebase.firestore.FieldValue.arrayUnion(sig) });
-    toast("Ink recorded.");
-    closeModal("paySignModal");
-    loadPayments();
-  }
-
   function payGuard(name) {
     const p = (state.payments || []).find((x) => x.id === payTarget);
     if (!p) return "Payment not found.";
     const mine = (state.user.email || "").toLowerCase();
-    if ((p.approvals || []).some((s) => (s.email || "").toLowerCase() === mine)) return "You already inked this payment.";
+    const arr = payMode === "delete" ? (p.deleteApprovals || []) : (p.approvals || []);
+    if (arr.some((s) => (s.email || "").toLowerCase() === mine)) return "You already inked this.";
     if (!name) return "Enter signer name first.";
     return null;
+  }
+
+  async function addPayApproval(sig) {
+    if (!payTarget) return;
+    const field = payMode === "delete" ? "deleteApprovals" : "approvals";
+    await paymentsCol().doc(payTarget).update({ [field]: firebase.firestore.FieldValue.arrayUnion(sig) });
+    closeModal("paySignModal");
+    loadPayments();
+  }
+
+  async function submitPaySig(sig) {
+    const p = (state.payments || []).find((x) => x.id === payTarget);
+    const before = p ? (payMode === "delete" ? (p.deleteApprovals || []).length : (p.approvals || []).length) : 0;
+    await addPayApproval(sig);
+    if (payMode === "delete") {
+      if (before + 1 >= 2) {
+        await paymentsCol().doc(payTarget).delete();
+        toast("Authorized payment deleted — two inks recorded.");
+      } else {
+        toast("Delete requested — one more ink needed.");
+      }
+      loadPayments();
+    } else {
+      toast("Ink recorded.");
+    }
   }
 
   document.getElementById("payOneBtn").addEventListener("click", async () => {
     const name = document.getElementById("paySignName").value.trim();
     const bad = payGuard(name);
     if (bad) { toast(bad, "err"); return; }
-    await addPayApproval({
+    await submitPaySig({
       name, email: state.user.email || "", uid: state.user.uid || "",
       method: "one-click", device: (navigator.userAgent || "") + " · " + new Date().toLocaleString(),
       signedAt: new Date().toISOString(), ink: typedInk3(name)
@@ -337,7 +370,7 @@
     const bad = payGuard(name);
     if (bad) { toast(bad, "err"); return; }
     if (!payHasInk) { toast("Draw a signature first.", "err"); return; }
-    await addPayApproval({
+    await submitPaySig({
       name, email: state.user.email || "", uid: state.user.uid || "",
       method: "gesture", device: (navigator.userAgent || "") + " · " + new Date().toLocaleString(),
       signedAt: new Date().toISOString(), ink: document.getElementById("payCanvas").toDataURL("image/png")
@@ -539,6 +572,6 @@
     }
   });
 
-  console.log("SPIDERWEB Drop 3 loaded.");
+  console.log("SPIDERWEB Drop 3 v3 loaded.");
 })();
 /* SPIDERWEB-DROP3-END */
