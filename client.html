@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Spiderweb Client Portal</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Bangers&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet" />
+  <style>
+    :root{--bg:#120609;--panel:#231017;--line:rgba(230,36,46,.18);--red:#e6242e;--deep:#8f1220;--blue:#3d7bff;--green:#7dffa0;--ink:#f7eef0;--mut:#c2a9ae;--shadow:4px 4px 0 rgba(0,0,0,.72)}
+    *{box-sizing:border-box}
+    html,body{margin:0;min-height:100%;background:var(--bg);color:var(--ink);font-family:"Space Grotesk",sans-serif}
+    body{background-image:radial-gradient(circle at 20% 15%,rgba(230,36,46,.14),transparent 32%),url("data:image/svg+xml,%3Csvg width='72' height='72' viewBox='0 0 72 72' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' stroke='%23e6242e' stroke-opacity='0.10'%3E%3Cpath d='M0 36h72M36 0v72M0 0l72 72M72 0L0 72'/%3E%3C/g%3E%3C/svg%3E");background-size:cover,72px 72px;background-attachment:fixed}
+    .hidden{display:none!important}
+    h1,h2,h3,.btn{font-family:"Bangers",cursive;letter-spacing:.05em}
+    .shell{min-height:100vh;display:grid;place-items:center;padding:20px}
+    .card{width:min(460px,100%);background:linear-gradient(180deg,rgba(35,16,23,.96),rgba(27,11,16,.96));border:2px solid var(--line);border-radius:18px;box-shadow:var(--shadow);padding:26px;text-align:center}
+    .card h2{margin:0;font-size:2rem}
+    .card h2 span{color:var(--red)}
+    .card p{color:var(--mut)}
+    .field{display:grid;gap:6px;margin-bottom:14px;text-align:left}
+    .field label{font-size:.85rem;color:var(--mut);text-transform:uppercase;letter-spacing:.08em}
+    .field input{width:100%;padding:12px 14px;border-radius:12px;border:2px solid rgba(230,36,46,.22);background:rgba(18,6,9,.62);color:var(--ink);outline:none}
+    .btn{appearance:none;border:2px solid rgba(230,36,46,.26);border-radius:12px;padding:11px 16px;background:linear-gradient(135deg,var(--red),var(--deep));color:#fff;font-size:1rem;text-transform:uppercase;box-shadow:var(--shadow);cursor:pointer}
+    .btn:disabled{opacity:.5;cursor:not-allowed}
+    .btn.ghost{background:rgba(27,11,16,.72);border:2px dashed var(--line);color:var(--ink)}
+    .btn.small{padding:8px 12px;font-size:.85rem}
+    header{position:sticky;top:0;z-index:20;display:flex;justify-content:space-between;align-items:center;gap:12px;padding:14px 18px;border-bottom:2px dashed var(--line);background:rgba(18,6,9,.88);backdrop-filter:blur(10px)}
+    header h1{margin:0;font-size:1.4rem}
+    header h1 span{color:var(--red)}
+    .wrap{max-width:960px;margin:0 auto;padding:18px;display:grid;gap:18px}
+    .panel{background:linear-gradient(180deg,rgba(35,16,23,.96),rgba(27,11,16,.96));border:2px solid var(--line);border-radius:18px;box-shadow:var(--shadow);padding:18px}
+    .panel h2{margin:0 0 12px;font-size:1.5rem}
+    .muted{color:var(--mut)}
+    .small{font-size:.85rem}
+    .badge{display:inline-block;padding:5px 10px;border-radius:999px;font-size:.75rem;font-weight:800;text-transform:uppercase;letter-spacing:.06em;border:1px solid transparent}
+    .badge.ok{color:var(--green);border-color:rgba(125,255,160,.35);background:rgba(125,255,160,.08)}
+    .badge.wait{color:#ffd76e;border-color:rgba(255,215,110,.35);background:rgba(255,215,110,.08)}
+    .pay-card{border:2px solid var(--line);border-radius:14px;padding:14px;margin-bottom:14px;background:rgba(18,6,9,.35)}
+    .pay-top{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center}
+    .amt{font-family:"Bangers",cursive;font-size:1.5rem;margin:6px 0}
+    .meta{color:var(--mut);font-size:.88rem;margin:2px 0}
+    .rcpt{border-top:1px dashed var(--line);margin-top:8px;padding-top:8px}
+    .link{color:var(--blue)}
+    .msgs{max-height:380px;min-height:200px;overflow:auto;display:grid;gap:8px;padding:12px;border-radius:14px;border:2px solid var(--line);background:rgba(18,6,9,.35)}
+    .msg{max-width:85%;padding:10px 12px;border-radius:14px;background:rgba(61,123,255,.14);border:1px solid rgba(61,123,255,.3);overflow-wrap:anywhere}
+    .msg.me{margin-left:auto;background:rgba(230,36,46,.14);border-color:rgba(230,36,46,.35)}
+    .msg small{display:block;color:var(--mut);margin-top:4px;font-size:.72rem}
+    .msg-actions{display:flex;gap:6px;margin-top:6px}
+    .msg-btn{border:1px solid var(--line);background:rgba(18,6,9,.4);border-radius:8px;padding:2px 8px;font-size:.78rem;color:var(--mut)}
+    .chat-input{display:flex;gap:10px;margin-top:10px}
+    .chat-input input{flex:1;padding:12px;border-radius:12px;border:2px solid rgba(230,36,46,.22);background:rgba(18,6,9,.62);color:var(--ink);outline:none}
+    .modal{position:fixed;inset:0;z-index:60;display:grid;place-items:center;padding:20px;background:rgba(8,3,5,.78)}
+    .modal-box{width:min(520px,100%);background:var(--panel);border:2px solid var(--line);border-radius:18px;box-shadow:var(--shadow);padding:20px}
+    .toast{position:fixed;right:16px;bottom:16px;z-index:99;display:grid;gap:8px;max-width:min(360px,90vw)}
+    .toast-item{padding:12px 14px;border-radius:14px;border:2px solid rgba(230,36,46,.3);background:rgba(24,8,12,.94);box-shadow:var(--shadow)}
+    .toast-item.ok{border-color:rgba(125,255,160,.35)}
+  </style>
+</head>
+<body>
+  <main id="loginView" class="shell">
+    <section class="card">
+      <h2>SPIDER<span>WEB</span></h2>
+      <p>Client portal — payments, receipts and chat with your studio.</p>
+      <form id="loginForm">
+        <div class="field"><label for="loginEmail">Email</label><input id="loginEmail" type="email" required /></div>
+        <div class="field"><label for="loginPassword">Password</label><input id="loginPassword" type="password" required /></div>
+        <button id="loginBtn" class="btn" type="submit" style="width:100%">Log in</button>
+      </form>
+    </section>
+  </main>
+
+  <main id="noAccountView" class="shell hidden">
+    <section class="card">
+      <h2>NO PORTAL <span>ACCOUNT</span></h2>
+      <p>This login has no client account. Ask Spiderweb to create one for you.</p>
+      <button id="naSignOut" class="btn ghost" type="button">Sign out</button>
+    </section>
+  </main>
+
+  <div id="appView" class="hidden">
+    <header>
+      <h1>SPIDER<span>WEB</span> CLIENT PORTAL</h1>
+      <div style="display:flex;gap:10px;align-items:center">
+        <span id="whoami" class="muted small"></span>
+        <button id="signOutBtn" class="btn ghost small" type="button">Sign out</button>
+      </div>
+    </header>
+    <div class="wrap">
+      <section class="panel" id="contractPanel" class="hidden">
+        <h2>Your contract</h2>
+        <div id="contractBody" class="meta"></div>
+      </section>
+      <section class="panel">
+        <h2>Payments & receipts</h2>
+        <div id="payList"></div>
+      </section>
+      <section class="panel">
+        <h2>Chat with the studio</h2>
+        <div id="chatMsgs" class="msgs"></div>
+        <form id="chatForm" class="chat-input">
+          <input id="chatText" placeholder="Type a message…" autocomplete="off" />
+          <button id="chatFileBtn" class="btn ghost" type="button" title="Attach a file">📎</button>
+          <input id="chatFile" type="file" hidden />
+          <button class="btn" type="submit">Send</button>
+        </form>
+      </section>
+    </div>
+  </div>
+
+  <div id="receiptModal" class="modal hidden">
+    <section class="modal-box">
+      <h3 style="margin:0 0 12px">Submit payment receipt</h3>
+      <div class="field"><label for="rcptRef">Bank transfer reference / note</label><input id="rcptRef" required placeholder="Example: CBE transfer 0012345" /></div>
+      <div class="field"><label for="rcptFile">Receipt file (optional)</label><input id="rcptFile" type="file" /></div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <button id="rcptSave" class="btn" type="button">Submit receipt</button>
+        <button id="rcptCancel" class="btn ghost" type="button">Cancel</button>
+      </div>
+    </section>
+  </div>
+
+  <div id="toast" class="toast"></div>
+
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script>
+    const FIREBASE_CONFIG = {
+      apiKey: "AIzaSyAVp_wqzt5gn54y0-0hFf7u9GrTgV_xEls",
+      authDomain: "spiderweb-d10c7.firebaseapp.com",
+      projectId: "spiderweb-d10c7",
+      storageBucket: "spiderweb-d10c7.firebasestorage.app",
+      messagingSenderId: "341291634792",
+      appId: "1:341291634792:web:25b56a063f24c9b983ebdd"
+    };
+    const SUPABASE_URL = "https://kaeqlzdgfsssmehmskdn.supabase.co";
+    const SUPABASE_KEY = "sb_publishable_CcxIPiwFbSFvzkL3gFOsgw_U-6c3yVx";
+    const BUCKET = "docs";
+
+    firebase.initializeApp(FIREBASE_CONFIG);
+    const auth = firebase.auth();
+    const db = firebase.firestore();
+    const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    const $ = (id) => document.getElementById(id);
+    const state = { user: null, client: null, customer: null, roomId: null, chatUnsub: null, payTarget: null, pendingFile: null };
+
+    function toast(msg, type) {
+      const t = document.createElement("div");
+      t.className = "toast-item" + (type === "ok" ? " ok" : "");
+      t.textContent = msg;
+      $("toast").appendChild(t);
+      setTimeout(() => t.remove(), 5000);
+    }
+    function esc(s) {
+      return String(s || "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
+    }
+    function fmtDate(v) { try { return new Intl.DateTimeFormat("en-US", { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(v)); } catch (e) { return String(v || ""); } }
+    function show(view) {
+      $("loginView").classList.toggle("hidden", view !== "login");
+      $("noAccountView").classList.toggle("hidden", view !== "none");
+      $("appView").classList.toggle("hidden", view !== "app");
+    }
+
+    $("loginForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      $("loginBtn").disabled = true;
+      try { await auth.signInWithEmailAndPassword($("loginEmail").value.trim(), $("loginPassword").value); }
+      catch (err) { toast(err.message || "Login failed.", "err"); }
+      finally { $("loginBtn").disabled = false; }
+    });
+    $("signOutBtn").addEventListener("click", () => auth.signOut());
+    $("naSignOut").addEventListener("click", () => auth.signOut());
+
+    auth.onAuthStateChanged(async (user) => {
+      state.user = user;
+      if (!user) { show("login"); return; }
+      try {
+        const snap = await db.collection("c").doc("clients").collection("list").doc(user.uid).get();
+        if (!snap.exists) { show("none"); return; }
+        state.client = snap.data();
+        $("whoami").textContent = state.client.name || user.email;
+        show("app");
+        loadCustomer();
+        loadPayments();
+        startChat();
+      } catch (err) {
+        console.error(err
