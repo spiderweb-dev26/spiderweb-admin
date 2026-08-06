@@ -1,4 +1,4 @@
-/* SPIDERWEB DROP 3 — Payments (countersign) + Crew chat v2 (edit/delete/files) */
+/* SPIDERWEB DROP 3 — Payments (countersign) + Crew chat v2 (edit/delete/files) + Drop4 customer link */
 (function () {
   "use strict";
   if (window.__DROP3__) return;
@@ -184,6 +184,8 @@
           ${p.accountNumber ? `<span>Acct #: ${escapeHtml(p.accountNumber)}</span>` : ""}
         </div>
         ${p.note ? `<div class="task-meta">${escapeHtml(p.note)}</div>` : ""}
+        ${p.customerName ? `<div class="task-meta">Customer: ${escapeHtml(p.customerName)}</div>` : ""}
+        ${(p.receipts || []).length ? `<div class="task-meta">Receipts: ${(p.receipts || []).length}</div>` : ""}
         <div class="appr-list">
           ${ap.map((s) => `<div class="mini-row"><span>${escapeHtml(s.name)} ${admins.has((s.email || "").toLowerCase()) ? '<span class="overdue">Admin</span>' : ""} · ${escapeHtml(s.method === "gesture" ? "drawn" : "one-click")}</span><span class="muted small">${escapeHtml(formatDate(s.signedAt))}</span></div>`).join("") || '<div class="muted small">No inks yet.</div>'}
         </div>
@@ -216,6 +218,8 @@
         accountName: document.getElementById("payAccountName").value.trim(),
         accountNumber: document.getElementById("payAccountNumber").value.trim(),
         note: document.getElementById("payNote").value.trim(),
+        customerId: window.__payCustomerId || "",
+        customerName: window.__payCustomerName || "",
         approvals: [],
         createdBy: state.user ? state.user.email : "",
         createdByName: state.profile ? state.profile.name : "",
