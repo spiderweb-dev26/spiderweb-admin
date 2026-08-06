@@ -1,4 +1,4 @@
-/* SPIDERWEB DROP 6 v2 — expanding hover menu on top + logo + Dashboard landing */
+/* SPIDERWEB DROP 6 v3 — expanding hover menu + logo hunt + "Admin Portal" branding */
 (function () {
   "use strict";
   if (window.__DROP6__) return;
@@ -34,22 +34,33 @@
   `;
   document.head.appendChild(style);
 
+  // branding: tab title + header name
+  document.title = "Spiderweb Admin Portal";
+  const h1 = document.querySelector(".brand-copy h1");
+  if (h1) h1.innerHTML = 'SPIDER<span>WEB</span> ADMIN PORTAL';
+
   const fav = document.createElement("link");
   fav.rel = "icon";
-  fav.href = "logo.png";
   document.head.appendChild(fav);
 
+  // logo hunt: try common locations, first hit wins
+  const LOGO_PATHS = ["logo.png", "./logo.png", "assets/logo.png", "img/logo.png", "public/logo.png"];
   const badge = document.querySelector(".brand-badge");
-  if (badge) {
+  function tryLogo(i) {
+    if (!badge || i >= LOGO_PATHS.length) return;
     const img = document.createElement("img");
-    img.src = "logo.png";
-    img.alt = "Spiderweb logo";
     img.className = "sw-logo";
-    img.onerror = () => img.remove();
-    badge.innerHTML = "";
-    badge.style.background = "transparent";
-    badge.appendChild(img);
+    img.alt = "Spiderweb logo";
+    img.onload = () => {
+      badge.innerHTML = "";
+      badge.style.background = "transparent";
+      badge.appendChild(img);
+      fav.href = LOGO_PATHS[i];
+    };
+    img.onerror = () => { img.remove(); tryLogo(i + 1); };
+    img.src = LOGO_PATHS[i];
   }
+  tryLogo(0);
 
   // expanding hover menu
   const VIEWS = [
@@ -126,6 +137,6 @@
   }
   setActive("dashboard");
 
-  console.log("SPIDERWEB Drop 6 v2 loaded — hover to expand.");
+  console.log("SPIDERWEB Drop 6 v3 loaded.");
 })();
 /* SPIDERWEB-DROP6-END */
