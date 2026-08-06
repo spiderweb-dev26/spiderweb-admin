@@ -1,4 +1,4 @@
-/* SPIDERWEB DROP 3 v3 — Payments (2-ink auth + 2-ink delete) + Crew chat v2 */
+/* SPIDERWEB DROP 3 v4 — Payments (2-ink auth; delete = admin + CLIENT ink) + Crew chat v2 */
 (function () {
   "use strict";
   if (window.__DROP3__) return;
@@ -36,6 +36,9 @@
     (state.users || []).forEach((u) => { if (u.role === "admin") set.add((u.email || "").toLowerCase()); });
     return set;
   };
+  function delDone(dr) {
+    return dr && Array.isArray(dr.approvals) && dr.approvals.some((s) => s.role === "admin") && dr.approvals.some((s) => s.role === "client");
+  }
 
   const navSec = document.querySelector(".side .nav");
   const allNav = () => Array.from(document.querySelectorAll(".nav-item"));
@@ -58,7 +61,7 @@
   mainEl.insertAdjacentHTML("beforeend", `
     <section class="panel hidden" id="paymentsView">
       <div class="page-head">
-        <div><h2>Payments</h2><p>Authorizations need TWO inks (one admin). Deleting an AUTHORIZED payment also needs TWO inks.</p></div>
+        <div><h2>Payments</h2><p>Authorize = 2 inks (one admin). Deleting an AUTHORIZED payment = admin ink + the CLIENT's ink.</p></div>
         <button id="newPaymentBtn" class="btn" type="button">New payment auth</button>
       </div>
       <div class="content">
@@ -138,7 +141,8 @@
   // ============ PAYMENTS ============
   state.payments = state.payments || [];
   let payTarget = null;
-  let payMode = "pay"; // "pay" | "delete"
+  let payMode = "pay";
+  let pendingDelete = null;
   let payDrawing = false, payLast = null, payCtx = null, payHasInk = false;
 
   async function loadPayments() {
@@ -170,15 +174,13 @@
     if (!pays.length) { empty.classList.remove("hidden"); return; }
     empty.classList.add("hidden");
     const admins = adminEmails3();
-    const me = (state.user && state.user.email || "").toLowerCase();
+    const isAdminUser = isAdmin3();
     pays.forEach((p) => {
       const st = payStatus(p);
       const ap = Array.isArray(p.approvals) ? p.approvals : [];
-      const delAp = Array.isArray(p.deleteApprovals) ? p.deleteApprovals : [];
-      const signedDel = delAp.some((s) => (s.email || "").toLowerCase() === me);
-      const badge = (st.key === "ok" && delAp.length > 0)
-        ? `<span class="overdue">Delete ${delAp.length}/2 inks</span>`
-        : st.html;
+      const delPending = !!p.delRequest && !delDone(p.delRequest);
+      const delReady = !!p.delRequest && delDone(p.delRequest);
+      const badge = delPending ? '<span class="overdue">Delete: client ink pending</span>' : delReady ? '<span class="overdue">Delete: approved</span>' : st.html;
       const row = document.createElement("div");
       row.className = "task-row";
       row.innerHTML = `
@@ -195,22 +197,28 @@
         ${p.note ? `<div class="task-meta">${escapeHtml(p.note)}</div>` : ""}
         ${p.customerName ? `<div class="task-meta">Customer: ${escapeHtml(p.customerName)}</div>` : ""}
         ${(p.receipts || []).length ? `<div class="task-meta">Receipts: ${(p.receipts || []).length}</div>` : ""}
+        ${p.delRequest ? `<div class="task-meta">Delete requested by ${escapeHtml(p.delRequest.requestedBy || "")} · needs client ink (${escapeHtml(p.delRequest.clientEmail || "")})</div>` : ""}
         <div class="appr-list">
           ${ap.map((s) => `<div class="mini-row"><span>${escapeHtml(s.name)} ${admins.has((s.email || "").toLowerCase()) ? '<span class="overdue">Admin</span>' : ""} · ${escapeHtml(s.method === "gesture" ? "drawn" : "one-click")}</span><span class="muted small">${escapeHtml(formatDate(s.signedAt))}</span></div>`).join("") || '<div class="muted small">No inks yet.</div>'}
         </div>
         <div class="doc-actions">
           <button class="btn small" data-act="sign" type="button">Sign / countersign</button>
           <button class="btn secondary small" data-act="letter" type="button" ${st.key === "ok" ? "" : "disabled"}>Authorization letter</button>
-          ${st.key === "ok" && delAp.length === 0 && isAdmin3() ? '<button class="btn ghost small" data-act="reqdel" type="button">Request delete</button>' : ""}
-          ${st.key === "ok" && delAp.length === 1 && !signedDel ? '<button class="btn small" data-act="signdel" type="button">Countersign delete</button>' : ""}
-          ${st.key !== "ok" && isAdmin3() ? '<button class="btn ghost small" data-act="del" type="button">Delete</button>' : ""}
+          ${st.key === "ok" && !p.delRequest && isAdminUser ? '<button class="btn ghost small" data-act="reqdel" type="button">Request delete</button>' : ""}
+          ${delReady && isAdminUser ? '<button class="btn ghost small" data-act="findel" type="button">Finalize delete</button>' : ""}
+          ${st.key !== "ok" && isAdminUser ? '<button class="btn ghost small" data-act="del" type="button">Delete</button>' : ""}
         </div>`;
       row.querySelector('[data-act="sign"]').addEventListener("click", () => openPaySign(p, "pay"));
       row.querySelector('[data-act="letter"]').addEventListener("click", () => openLetter(p));
       const rd = row.querySelector('[data-act="reqdel"]');
       if (rd) rd.addEventListener("click", () => openPaySign(p, "delete"));
-      const sd = row.querySelector('[data-act="signdel"]');
-      if (sd) sd.addEventListener("click", () => openPaySign(p, "delete"));
+      const fd = row.querySelector('[data-act="findel"]');
+      if (fd) fd.addEventListener("click", async () => {
+        if (!confirm("Both inks recorded — delete this payment now?")) return;
+        await paymentsCol().doc(p.id).delete();
+        toast("Payment deleted with admin + client inks.");
+        loadPayments();
+      });
       const del = row.querySelector('[data-act="del"]');
       if (del) del.addEventListener("click", async () => {
         if (!confirm("Delete this payment authorization?")) return;
@@ -236,7 +244,6 @@
         customerId: window.__payCustomerId || "",
         customerName: window.__payCustomerName || "",
         approvals: [],
-        deleteApprovals: [],
         createdBy: state.user ? state.user.email : "",
         createdByName: state.profile ? state.profile.name : "",
         createdAt: new Date().toISOString()
@@ -248,11 +255,21 @@
     } catch (err) { toast("Payment failed: " + err.message, "err"); }
   });
 
-  function openPaySign(p, mode) {
+  async function openPaySign(p, mode) {
+    if (mode === "delete") {
+      if (!p.customerId) { toast("This payment has no customer linked — the client must countersign deletions.", "err"); return; }
+      try {
+        const cs = await db.collection("c").doc("clients").collection("list").where("customerId", "==", p.customerId).get();
+        if (cs.empty) { toast("No client login for this customer yet — create one under Clients first.", "err"); return; }
+        pendingDelete = { clientEmail: cs.docs[0].data().email };
+      } catch (e) { toast("Client lookup failed: " + e.message, "err"); return; }
+    } else {
+      pendingDelete = null;
+    }
     payTarget = p.id;
     payMode = mode || "pay";
     document.getElementById("paySignTitle").textContent =
-      (payMode === "delete" ? "Authorize DELETE: " : "") + (p.title || "Sign payment");
+      (payMode === "delete" ? "Authorize DELETE request: " : "") + (p.title || "Sign payment");
     document.getElementById("paySignName").value = state.profile ? state.profile.name : "";
     payTabSwitch("one");
     openModal("paySignModal");
@@ -323,58 +340,65 @@
     const p = (state.payments || []).find((x) => x.id === payTarget);
     if (!p) return "Payment not found.";
     const mine = (state.user.email || "").toLowerCase();
-    const arr = payMode === "delete" ? (p.deleteApprovals || []) : (p.approvals || []);
-    if (arr.some((s) => (s.email || "").toLowerCase() === mine)) return "You already inked this.";
+    if ((p.approvals || []).some((s) => (s.email || "").toLowerCase() === mine)) return "You already inked this.";
     if (!name) return "Enter signer name first.";
     return null;
   }
 
   async function addPayApproval(sig) {
     if (!payTarget) return;
-    const field = payMode === "delete" ? "deleteApprovals" : "approvals";
-    await paymentsCol().doc(payTarget).update({ [field]: firebase.firestore.FieldValue.arrayUnion(sig) });
+    await paymentsCol().doc(payTarget).update({ approvals: firebase.firestore.FieldValue.arrayUnion(sig) });
+    toast("Ink recorded.");
     closeModal("paySignModal");
     loadPayments();
   }
 
-  async function submitPaySig(sig) {
-    const p = (state.payments || []).find((x) => x.id === payTarget);
-    const before = p ? (payMode === "delete" ? (p.deleteApprovals || []).length : (p.approvals || []).length) : 0;
-    await addPayApproval(sig);
-    if (payMode === "delete") {
-      if (before + 1 >= 2) {
-        await paymentsCol().doc(payTarget).delete();
-        toast("Authorized payment deleted — two inks recorded.");
-      } else {
-        toast("Delete requested — one more ink needed.");
+  async function submitDeleteRequest(sig) {
+    sig.role = "admin";
+    await paymentsCol().doc(payTarget).update({
+      delRequest: {
+        what: "payment",
+        clientEmail: pendingDelete.clientEmail,
+        requestedBy: state.user.email,
+        requestedAt: new Date().toISOString(),
+        approvals: [sig]
       }
-      loadPayments();
-    } else {
-      toast("Ink recorded.");
-    }
+    });
+    closeModal("paySignModal");
+    toast("Deletion requested — waiting for the client's ink in their portal.");
+    loadPayments();
+  }
+
+  function buildSig(name, extra) {
+    return Object.assign({
+      name, email: state.user.email || "", uid: state.user.uid || "",
+      method: "one-click", device: (navigator.userAgent || "") + " · " + new Date().toLocaleString(),
+      signedAt: new Date().toISOString(), ink: typedInk3(name)
+    }, extra || {});
   }
 
   document.getElementById("payOneBtn").addEventListener("click", async () => {
     const name = document.getElementById("paySignName").value.trim();
+    if (!name) { toast("Enter signer name first.", "err"); return; }
+    if (payMode === "delete") { await submitDeleteRequest(buildSig(name)); return; }
     const bad = payGuard(name);
     if (bad) { toast(bad, "err"); return; }
-    await submitPaySig({
-      name, email: state.user.email || "", uid: state.user.uid || "",
-      method: "one-click", device: (navigator.userAgent || "") + " · " + new Date().toLocaleString(),
-      signedAt: new Date().toISOString(), ink: typedInk3(name)
-    });
+    await addPayApproval(buildSig(name));
   });
 
   document.getElementById("payDrawSignBtn").addEventListener("click", async () => {
     const name = document.getElementById("paySignName").value.trim();
-    const bad = payGuard(name);
-    if (bad) { toast(bad, "err"); return; }
+    if (!name) { toast("Enter signer name first.", "err"); return; }
     if (!payHasInk) { toast("Draw a signature first.", "err"); return; }
-    await submitPaySig({
+    const sig = {
       name, email: state.user.email || "", uid: state.user.uid || "",
       method: "gesture", device: (navigator.userAgent || "") + " · " + new Date().toLocaleString(),
       signedAt: new Date().toISOString(), ink: document.getElementById("payCanvas").toDataURL("image/png")
-    });
+    };
+    if (payMode === "delete") { await submitDeleteRequest(sig); return; }
+    const bad = payGuard(name);
+    if (bad) { toast(bad, "err"); return; }
+    await addPayApproval(sig);
   });
 
   function openLetter(p) {
@@ -572,6 +596,6 @@
     }
   });
 
-  console.log("SPIDERWEB Drop 3 v3 loaded.");
+  console.log("SPIDERWEB Drop 3 v4 loaded.");
 })();
 /* SPIDERWEB-DROP3-END */
