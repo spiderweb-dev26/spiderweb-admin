@@ -1,4 +1,4 @@
-/* SPIDERWEB DROP 6 v4 — slim expanding hover menu + logo + Dashboard landing */
+/* SPIDERWEB DROP 6 v5 — slim nav + logo on ALL badges + login rebrand */
 (function () {
   "use strict";
   if (window.__DROP6__) return;
@@ -28,39 +28,51 @@
     .sw-burger{border:2px solid var(--line);background:rgba(35,16,23,.7);color:var(--ink);border-radius:10px;
       padding:5px 10px;cursor:pointer;font-size:1rem;line-height:1}
     .sw-burger:hover{border-color:rgba(230,36,46,.45)}
-    .sw-logo{width:44px;height:44px;border-radius:999px;object-fit:cover;mix-blend-mode:screen;
+    .sw-logo{width:46px;height:46px;border-radius:999px;object-fit:cover;mix-blend-mode:screen;
       border:2px solid rgba(230,36,46,.4);box-shadow:var(--shadow-soft)}
+    .auth-card .sw-logo{width:74px;height:74px;margin:0 auto 12px;display:block}
     .sw-dangle .thread{height:44px!important}
     @media(max-width:900px){.sw-topnav{top:112px}.sw-chip:hover{width:46px}.sw-chip.active{width:148px}}
   `;
   document.head.appendChild(style);
 
+  // branding: tab title + top bar + login card
   document.title = "Spiderweb Admin Portal";
   const h1 = document.querySelector(".brand-copy h1");
   if (h1) h1.innerHTML = 'SPIDER<span>WEB</span> ADMIN PORTAL';
+  const lh2 = document.querySelector(".auth-card h2");
+  if (lh2) lh2.innerHTML = 'SPIDER<span>WEB</span> ADMIN PORTAL';
+  const lp = document.querySelector(".auth-card p");
+  if (lp) lp.textContent = "Log in to spin the web.";
 
   const fav = document.createElement("link");
   fav.rel = "icon";
   document.head.appendChild(fav);
 
+  // logo: probe paths, then apply to EVERY badge (login + top bar)
   const LOGO_PATHS = ["logo.png", "./logo.png", "assets/logo.png", "img/logo.png", "public/logo.png"];
-  const badge = document.querySelector(".brand-badge");
+  const badges = Array.from(document.querySelectorAll(".brand-badge"));
   function tryLogo(i) {
-    if (!badge || i >= LOGO_PATHS.length) return;
-    const img = document.createElement("img");
-    img.className = "sw-logo";
-    img.alt = "Spiderweb logo";
-    img.onload = () => {
-      badge.innerHTML = "";
-      badge.style.background = "transparent";
-      badge.appendChild(img);
+    if (i >= LOGO_PATHS.length) return;
+    const probe = new Image();
+    probe.onload = () => {
+      badges.forEach((bd) => {
+        const img = new Image();
+        img.className = "sw-logo";
+        img.alt = "Spiderweb logo";
+        img.src = LOGO_PATHS[i];
+        bd.innerHTML = "";
+        bd.style.background = "transparent";
+        bd.appendChild(img);
+      });
       fav.href = LOGO_PATHS[i];
     };
-    img.onerror = () => { img.remove(); tryLogo(i + 1); };
-    img.src = LOGO_PATHS[i];
+    probe.onerror = () => tryLogo(i + 1);
+    probe.src = LOGO_PATHS[i];
   }
   tryLogo(0);
 
+  // slim expanding hover menu
   const VIEWS = [
     ["dashboard", "Dashboard", "🕸️"],
     ["documents", "Documents", "📄"],
@@ -134,6 +146,6 @@
   }
   setActive("dashboard");
 
-  console.log("SPIDERWEB Drop 6 v4 loaded.");
+  console.log("SPIDERWEB Drop 6 v5 loaded.");
 })();
 /* SPIDERWEB-DROP6-END */
