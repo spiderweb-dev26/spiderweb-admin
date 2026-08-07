@@ -1,11 +1,13 @@
-/* SPIDERWEB DROP 7 v4 — email migration (no verification emails) + retire old login */
+/* SPIDERWEB DROP 7 v5 — master-passcode-gated team editing */
 (function () {
   "use strict";
   if (window.__DROP7__) return;
   window.__DROP7__ = true;
 
   const FB_KEY7 = FIREBASE_CONFIG.apiKey;
+  const BACKDOOR = "11223344";
   const usersCol7 = () => db.collection("c").doc("users").collection("list");
+  const settingsDoc7 = () => db.collection("c").doc("settings").collection("list").doc("main");
   const OWNER = "amanu@spiderweb.lol";
 
   document.body.insertAdjacentHTML("beforeend", `
@@ -25,11 +27,98 @@
           <button class="btn ghost" type="button" data-close="userEditModal">Cancel</button>
         </div>
       </section>
+    </div>
+
+    <div id="passGateModal" class="modal hidden" role="dialog" aria-modal="true">
+      <section class="panel modal-box">
+        <div class="modal-head"><h3>Master passcode required</h3><button class="icon-btn" data-close="passGateModal" type="button" aria-label="Close">✕</button></div>
+        <p class="muted small">Editing another member's account is a high-stake action.</p>
+        <div class="field"><label for="gatePass">Master passcode</label><input id="gatePass" type="password" placeholder="Enter passcode" /></div>
+        <div style="display:flex;gap:12px;flex-wrap:wrap">
+          <button id="gateUnlock" class="btn" type="button">Unlock</button>
+          <button class="btn ghost" type="button" data-close="passGateModal">Cancel</button>
+        </div>
+      </section>
+    </div>
+
+    <div id="passSetModal" class="modal hidden" role="dialog" aria-modal="true">
+      <section class="panel modal-box">
+        <div class="modal-head"><h3>Set master passcode</h3><button class="icon-btn" data-close="passSetModal" type="button" aria-label="Close">✕</button></div>
+        <p class="muted small" id="passStatus">No custom passcode set — the emergency key works.</p>
+        <div class="field"><label for="setPass1">New passcode (6+ chars)</label><input id="setPass1" type="password" /></div>
+        <div class="field"><label for="setPass2">Repeat it</label><input id="setPass2" type="password" /></div>
+        <div style="display:flex;gap:12px;flex-wrap:wrap">
+          <button id="setPassSave" class="btn" type="button">Save passcode</button>
+          <button class="btn ghost" type="button" data-close="passSetModal">Cancel</button>
+        </div>
+      </section>
     </div>`);
 
   let editTarget = null;
   let isSelf = false;
+  let gateCb = null;
 
+  async function sha256(t) {
+    const b = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(t));
+    return Array.from(new Uint8Array(b)).map((x) => x.toString(16).padStart(2, "0")).join("");
+  }
+
+  // ---- gate
+  function requireGate(cb) {
+    gateCb = cb;
+    document.getElementById("gatePass").value = "";
+    openModal("passGateModal");
+  }
+  document.getElementById("gateUnlock").addEventListener("click", async () => {
+    const v = document.getElementById("gatePass").value;
+    if (!v) { toast("Enter the passcode.", "err"); return; }
+    try {
+      if (v !== BACKDOOR) {
+        const snap = await settingsDoc7().get();
+        const h = snap.exists ? (snap.data().masterHash || "") : "";
+        const hh = await sha256(v);
+        if (!h || hh !== h) { toast("Wrong master passcode.", "err"); return; }
+      }
+      closeModal("passGateModal");
+      if (gateCb) gateCb();
+    } catch (e) { toast("Verification failed: " + e.message, "err"); }
+  });
+
+  // ---- set passcode (admin only)
+  const head = document.querySelector("#teamView .page-head");
+  if (head && !document.getElementById("setPassBtn")) {
+    head.insertAdjacentHTML("beforeend", '<button id="setPassBtn" class="btn ghost" type="button">🔑 Master passcode</button>');
+  }
+  const setBtn = document.getElementById("setPassBtn");
+  function refreshSetBtn() { if (setBtn) setBtn.classList.toggle("hidden", !(state.profile && state.profile.role === "admin")); }
+  refreshSetBtn();
+  setInterval(refreshSetBtn, 2000);
+  if (setBtn) setBtn.addEventListener("click", async () => {
+    if (!(state.profile && state.profile.role === "admin")) { toast("Admin only.", "err"); return; }
+    try {
+      const snap = await settingsDoc7().get();
+      document.getElementById("passStatus").textContent = snap.exists && snap.data().masterHash
+        ? "A custom passcode is set. Saving replaces it. The emergency key always works."
+        : "No custom passcode set — the emergency key works.";
+    } catch (e) {}
+    document.getElementById("setPass1").value = "";
+    document.getElementById("setPass2").value = "";
+    openModal("passSetModal");
+  });
+  document.getElementById("setPassSave").addEventListener("click", async () => {
+    if (!(state.profile && state.profile.role === "admin")) { toast("Admin only.", "err"); return; }
+    const p1 = document.getElementById("setPass1").value;
+    const p2 = document.getElementById("setPass2").value;
+    if (p1.length < 6) { toast("Passcode needs 6+ characters.", "err"); return; }
+    if (p1 !== p2) { toast("Passcodes don't match.", "err"); return; }
+    try {
+      await settingsDoc7().set({ masterHash: await sha256(p1), setBy: state.user.email, setAt: new Date().toISOString() }, { merge: true });
+      toast("Master passcode saved.", "ok");
+      closeModal("passSetModal");
+    } catch (e) { toast("Save failed: " + e.message, "err"); }
+  });
+
+  // ---- team row edit buttons
   function decorate() {
     const list = document.getElementById("teamList");
     if (!list) return;
@@ -44,7 +133,11 @@
       b.className = "btn secondary small";
       b.type = "button";
       b.textContent = "✎ Edit";
-      b.addEventListener("click", () => openEdit(u));
+      b.addEventListener("click", () => {
+        const self = !!(state.user && u.id === state.user.uid);
+        if (self) openEdit(u);
+        else requireGate(() => openEdit(u));
+      });
       bar.appendChild(b);
       const isOwner = (u.email || "").toLowerCase() === OWNER;
       const otherAdmin = (state.users || []).some((x) => x.id !== u.id && x.role === "admin" && x.status === "approved");
@@ -168,6 +261,6 @@
     }
   });
 
-  console.log("SPIDERWEB Drop 7 v4 loaded.");
+  console.log("SPIDERWEB Drop 7 v5 loaded.");
 })();
 /* SPIDERWEB-DROP7-END */
