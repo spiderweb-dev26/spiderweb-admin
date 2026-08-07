@@ -1,4 +1,4 @@
-/* SPIDERWEB DROP 7 v3 — account editing w/ verify-before-update email */
+/* SPIDERWEB DROP 7 v4 — email migration (no verification emails) + retire old login */
 (function () {
   "use strict";
   if (window.__DROP7__) return;
@@ -30,20 +30,6 @@
   let editTarget = null;
   let isSelf = false;
 
-  // keep profile email in sync after a verified email change
-  const syncTimer = setInterval(async () => {
-    try {
-      if (state.user && state.profile && state.user.email && state.profile.email &&
-          state.profile.email.toLowerCase() !== state.user.email.toLowerCase()) {
-        await usersCol7().doc(state.user.uid).update({ email: state.user.email });
-        state.profile.email = state.user.email;
-        toast("Profile email synced to " + state.user.email, "ok");
-        clearInterval(syncTimer);
-      }
-    } catch (e) { /* retry next tick */ }
-  }, 3000);
-  setTimeout(() => clearInterval(syncTimer), 60000);
-
   function decorate() {
     const list = document.getElementById("teamList");
     if (!list) return;
@@ -60,6 +46,21 @@
       b.textContent = "✎ Edit";
       b.addEventListener("click", () => openEdit(u));
       bar.appendChild(b);
+      const isOwner = (u.email || "").toLowerCase() === OWNER;
+      const otherAdmin = (state.users || []).some((x) => x.id !== u.id && x.role === "admin" && x.status === "approved");
+      if (isOwner && otherAdmin) {
+        const r = document.createElement("button");
+        r.className = "btn ghost small";
+        r.type = "button";
+        r.textContent = "Retire old login";
+        r.addEventListener("click", async () => {
+          if (!confirm("Retire " + u.email + "? It will fall back to the pending screen if used. Your new admin login keeps working.")) return;
+          await usersCol7().doc(u.id).delete();
+          toast("Old login retired.");
+          if (window.D2) D2.loadUsers();
+        });
+        bar.appendChild(r);
+      }
     });
   }
   const tl = document.getElementById("teamList");
@@ -81,7 +82,7 @@
     document.getElementById("uPassWrap").classList.toggle("hidden", !isSelf);
     document.getElementById("uResetLink").classList.toggle("hidden", isSelf);
     document.getElementById("uHint").textContent = isSelf
-      ? "Changing your own email sends a verification link to the NEW address — the login switches after you click it. Password applies immediately."
+      ? "Changing your own email creates a NEW admin login (email + temp password) instantly — no verification emails. Log in with it, then retire the old login from this list."
       : "To change someone's email, edit it and set a temp password — a new login is created and the old one is retired. Or use the reset-link button.";
     syncPassVisibility();
     openModal("userEditModal");
@@ -92,6 +93,10 @@
     if (!isSelf) {
       document.getElementById("uPassWrap").classList.toggle("hidden", !emailChanged);
       document.getElementById("uPassLabel").textContent = "Temp password for the NEW login (required to change email)";
+    } else {
+      document.getElementById("uPassLabel").textContent = emailChanged
+        ? "Temp password for your NEW login (required to change email)"
+        : "New password (optional — applies to your login)";
     }
   }
   document.getElementById("uEmail").addEventListener("input", syncPassVisibility);
@@ -111,7 +116,7 @@
     if (!editTarget) return;
     try {
       await auth.sendPasswordResetEmail(editTarget.email);
-      toast("Reset email sent to " + editTarget.email, "ok");
+      toast("Reset email sent to " + editTarget.email + " (check Spam — forwarding can delay it).", "ok");
     } catch (e) { toast("Could not send: " + e.message, "err"); }
   });
 
@@ -129,29 +134,26 @@
     };
     const emailChanged = email.toLowerCase() !== ((editTarget.email || "")).toLowerCase();
     try {
-      if (isSelf) {
-        if (pass) { await auth.currentUser.updatePassword(pass); toast("Password changed.", "ok"); }
-        if (emailChanged) {
-          await auth.currentUser.verifyBeforeUpdateEmail(email);
-          toast("Verification link sent to " + email + " — click it, then log in with the new address.", "ok");
-        }
-        await usersCol7().doc(editTarget.id).update(patch);
-        closeModal("userEditModal");
-        if (window.D2) D2.loadUsers();
-      } else if (emailChanged) {
-        if (pass.length < 6) { toast("Set a temp password (6+) for the new login.", "err"); return; }
+      if (emailChanged) {
+        if (pass.length < 6) { toast("Set a temp password (6+) for the NEW login.", "err"); return; }
         const uid = await signUpREST(email, pass);
         await usersCol7().doc(uid).set({
           uid, email, name,
-          role: patch.role, status: patch.status,
+          role: isSelf || owner ? "admin" : patch.role,
+          status: "approved",
           createdAt: new Date().toISOString(),
-          createdBy: state.user ? state.user.email : ""
+          createdBy: state.user ? state.user.email : "",
+          migratedFrom: editTarget.email
         });
-        await usersCol7().doc(editTarget.id).delete();
         const creds = document.getElementById("uCreds");
         creds.classList.remove("hidden");
-        creds.innerHTML = `<strong>New login ready:</strong> ${escapeHtml(email)} · temp password: ${escapeHtml(pass)} — share it securely.`;
-        toast("Email migrated to the new login.", "ok");
+        creds.innerHTML = `<strong>New login ready:</strong> ${escapeHtml(email)} · temp password: ${escapeHtml(pass)} — log out and log in with it, then retire the old login here.`;
+        toast("New login created — no emails involved.", "ok");
+        if (window.D2) D2.loadUsers();
+      } else if (isSelf) {
+        if (pass) { await auth.currentUser.updatePassword(pass); toast("Password changed.", "ok"); }
+        await usersCol7().doc(editTarget.id).update(patch);
+        closeModal("userEditModal");
         if (window.D2) D2.loadUsers();
       } else {
         await usersCol7().doc(editTarget.id).update(patch);
@@ -161,11 +163,11 @@
       }
     } catch (e) {
       console.error(e);
-      if (String(e.code || "").includes("requires-recent-login")) toast("Security check: log out, log back in, then retry the change.", "err");
+      if (String(e.code || "").includes("requires-recent-login")) toast("Security check: log out, log back in, then retry.", "err");
       else toast("Update failed: " + (e.message || e.code || "error"), "err");
     }
   });
 
-  console.log("SPIDERWEB Drop 7 v3 loaded.");
+  console.log("SPIDERWEB Drop 7 v4 loaded.");
 })();
 /* SPIDERWEB-DROP7-END */
