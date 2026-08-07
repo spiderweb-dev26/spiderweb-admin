@@ -1,4 +1,4 @@
-/* SPIDERWEB DROP 7 v2 — full account editing: name, email, password (incl. own) */
+/* SPIDERWEB DROP 7 v3 — account editing w/ verify-before-update email */
 (function () {
   "use strict";
   if (window.__DROP7__) return;
@@ -16,7 +16,7 @@
         <div class="field"><label for="uEmail">Email</label><input id="uEmail" type="email" required /></div>
         <div class="field"><label for="uRole">Role</label><select id="uRole"><option value="staff">Staff</option><option value="admin">Admin</option></select></div>
         <div class="field"><label for="uStatus">Status</label><select id="uStatus"><option value="approved">Approved</option><option value="pending">Pending</option><option value="blocked">Blocked</option></select></div>
-        <div class="field" id="uPassWrap"><label for="uPass" id="uPassLabel">New password (optional)</label><input id="uPass" type="password" placeholder="6+ characters" /></div>
+        <div class="field" id="uPassWrap"><label for="uPass" id="uPassLabel">New password (optional — applies to your login)</label><input id="uPass" type="password" placeholder="6+ characters" /></div>
         <div id="uCreds" class="task-meta hidden" style="margin-bottom:12px"></div>
         <p class="muted small" id="uHint"></p>
         <div style="display:flex;gap:12px;flex-wrap:wrap">
@@ -29,6 +29,20 @@
 
   let editTarget = null;
   let isSelf = false;
+
+  // keep profile email in sync after a verified email change
+  const syncTimer = setInterval(async () => {
+    try {
+      if (state.user && state.profile && state.user.email && state.profile.email &&
+          state.profile.email.toLowerCase() !== state.user.email.toLowerCase()) {
+        await usersCol7().doc(state.user.uid).update({ email: state.user.email });
+        state.profile.email = state.user.email;
+        toast("Profile email synced to " + state.user.email, "ok");
+        clearInterval(syncTimer);
+      }
+    } catch (e) { /* retry next tick */ }
+  }, 3000);
+  setTimeout(() => clearInterval(syncTimer), 60000);
 
   function decorate() {
     const list = document.getElementById("teamList");
@@ -66,10 +80,9 @@
     document.getElementById("uCreds").classList.add("hidden");
     document.getElementById("uPassWrap").classList.toggle("hidden", !isSelf);
     document.getElementById("uResetLink").classList.toggle("hidden", isSelf);
-    document.getElementById("uPassLabel").textContent = "New password (optional — applies to your login)";
     document.getElementById("uHint").textContent = isSelf
-      ? "Changing your own email updates your login email (a verification notice goes to the old address)."
-      : "To change someone's email, edit it and set a temp password in the field below — a new login is created and the old one is retired. Or use the reset-link button.";
+      ? "Changing your own email sends a verification link to the NEW address — the login switches after you click it. Password applies immediately."
+      : "To change someone's email, edit it and set a temp password — a new login is created and the old one is retired. Or use the reset-link button.";
     syncPassVisibility();
     openModal("userEditModal");
   }
@@ -117,10 +130,12 @@
     const emailChanged = email.toLowerCase() !== ((editTarget.email || "")).toLowerCase();
     try {
       if (isSelf) {
-        if (pass) { await auth.currentUser.updatePassword(pass); }
-        if (emailChanged) { await auth.currentUser.updateEmail(email); patch.email = email; }
+        if (pass) { await auth.currentUser.updatePassword(pass); toast("Password changed.", "ok"); }
+        if (emailChanged) {
+          await auth.currentUser.verifyBeforeUpdateEmail(email);
+          toast("Verification link sent to " + email + " — click it, then log in with the new address.", "ok");
+        }
         await usersCol7().doc(editTarget.id).update(patch);
-        toast("Your account was updated.", "ok");
         closeModal("userEditModal");
         if (window.D2) D2.loadUsers();
       } else if (emailChanged) {
@@ -146,10 +161,11 @@
       }
     } catch (e) {
       console.error(e);
-      toast("Update failed: " + (e.message || e.code || "error"), "err");
+      if (String(e.code || "").includes("requires-recent-login")) toast("Security check: log out, log back in, then retry the change.", "err");
+      else toast("Update failed: " + (e.message || e.code || "error"), "err");
     }
   });
 
-  console.log("SPIDERWEB Drop 7 v2 loaded.");
+  console.log("SPIDERWEB Drop 7 v3 loaded.");
 })();
 /* SPIDERWEB-DROP7-END */
