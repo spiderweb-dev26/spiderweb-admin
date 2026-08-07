@@ -1,4 +1,4 @@
-/* SPIDERWEB DROP 7 v5 — master-passcode-gated team editing */
+/* SPIDERWEB DROP 7 v6 — passcode changes require the old passcode */
 (function () {
   "use strict";
   if (window.__DROP7__) return;
@@ -43,10 +43,11 @@
 
     <div id="passSetModal" class="modal hidden" role="dialog" aria-modal="true">
       <section class="panel modal-box">
-        <div class="modal-head"><h3>Set master passcode</h3><button class="icon-btn" data-close="passSetModal" type="button" aria-label="Close">✕</button></div>
-        <p class="muted small" id="passStatus">No custom passcode set — the emergency key works.</p>
+        <div class="modal-head"><h3>Master passcode</h3><button class="icon-btn" data-close="passSetModal" type="button" aria-label="Close">✕</button></div>
+        <p class="muted small" id="passStatus"></p>
+        <div class="field hidden" id="setOldWrap"><label for="setPassOld">Current passcode (or emergency key)</label><input id="setPassOld" type="password" /></div>
         <div class="field"><label for="setPass1">New passcode (6+ chars)</label><input id="setPass1" type="password" /></div>
-        <div class="field"><label for="setPass2">Repeat it</label><input id="setPass2" type="password" /></div>
+        <div class="field"><label for="setPass2">Repeat new passcode</label><input id="setPass2" type="password" /></div>
         <div style="display:flex;gap:12px;flex-wrap:wrap">
           <button id="setPassSave" class="btn" type="button">Save passcode</button>
           <button class="btn ghost" type="button" data-close="passSetModal">Cancel</button>
@@ -57,13 +58,19 @@
   let editTarget = null;
   let isSelf = false;
   let gateCb = null;
+  let storedHash = "";
 
   async function sha256(t) {
     const b = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(t));
     return Array.from(new Uint8Array(b)).map((x) => x.toString(16).padStart(2, "0")).join("");
   }
+  async function validMaster(v) {
+    if (v === BACKDOOR) return true;
+    if (!storedHash) return false;
+    return (await sha256(v)) === storedHash;
+  }
 
-  // ---- gate
+  // ---- gate for editing others
   function requireGate(cb) {
     gateCb = cb;
     document.getElementById("gatePass").value = "";
@@ -73,18 +80,13 @@
     const v = document.getElementById("gatePass").value;
     if (!v) { toast("Enter the passcode.", "err"); return; }
     try {
-      if (v !== BACKDOOR) {
-        const snap = await settingsDoc7().get();
-        const h = snap.exists ? (snap.data().masterHash || "") : "";
-        const hh = await sha256(v);
-        if (!h || hh !== h) { toast("Wrong master passcode.", "err"); return; }
-      }
+      if (!(await validMaster(v))) { toast("Wrong master passcode.", "err"); return; }
       closeModal("passGateModal");
       if (gateCb) gateCb();
     } catch (e) { toast("Verification failed: " + e.message, "err"); }
   });
 
-  // ---- set passcode (admin only)
+  // ---- set / change passcode (admin only; old passcode required once set)
   const head = document.querySelector("#teamView .page-head");
   if (head && !document.getElementById("setPassBtn")) {
     head.insertAdjacentHTML("beforeend", '<button id="setPassBtn" class="btn ghost" type="button">🔑 Master passcode</button>');
@@ -97,22 +99,31 @@
     if (!(state.profile && state.profile.role === "admin")) { toast("Admin only.", "err"); return; }
     try {
       const snap = await settingsDoc7().get();
-      document.getElementById("passStatus").textContent = snap.exists && snap.data().masterHash
-        ? "A custom passcode is set. Saving replaces it. The emergency key always works."
-        : "No custom passcode set — the emergency key works.";
-    } catch (e) {}
+      storedHash = snap.exists ? (snap.data().masterHash || "") : "";
+    } catch (e) { storedHash = ""; }
+    const hasCustom = !!storedHash;
+    document.getElementById("setOldWrap").classList.toggle("hidden", !hasCustom);
+    document.getElementById("passStatus").textContent = hasCustom
+      ? "A custom passcode is set — verify it (or use the emergency key) to change it."
+      : "No custom passcode yet — set one below. The emergency key always works.";
+    document.getElementById("setPassOld").value = "";
     document.getElementById("setPass1").value = "";
     document.getElementById("setPass2").value = "";
     openModal("passSetModal");
   });
   document.getElementById("setPassSave").addEventListener("click", async () => {
     if (!(state.profile && state.profile.role === "admin")) { toast("Admin only.", "err"); return; }
-    const p1 = document.getElementById("setPass1").value;
-    const p2 = document.getElementById("setPass2").value;
-    if (p1.length < 6) { toast("Passcode needs 6+ characters.", "err"); return; }
-    if (p1 !== p2) { toast("Passcodes don't match.", "err"); return; }
     try {
+      if (storedHash) {
+        const oldV = document.getElementById("setPassOld").value;
+        if (!(await validMaster(oldV))) { toast("Current passcode incorrect.", "err"); return; }
+      }
+      const p1 = document.getElementById("setPass1").value;
+      const p2 = document.getElementById("setPass2").value;
+      if (p1.length < 6) { toast("Passcode needs 6+ characters.", "err"); return; }
+      if (p1 !== p2) { toast("New passcodes don't match.", "err"); return; }
       await settingsDoc7().set({ masterHash: await sha256(p1), setBy: state.user.email, setAt: new Date().toISOString() }, { merge: true });
+      storedHash = await sha256(p1);
       toast("Master passcode saved.", "ok");
       closeModal("passSetModal");
     } catch (e) { toast("Save failed: " + e.message, "err"); }
@@ -261,6 +272,6 @@
     }
   });
 
-  console.log("SPIDERWEB Drop 7 v5 loaded.");
+  console.log("SPIDERWEB Drop 7 v6 loaded.");
 })();
 /* SPIDERWEB-DROP7-END */
