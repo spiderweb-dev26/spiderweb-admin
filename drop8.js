@@ -1,4 +1,4 @@
-/* SPIDERWEB DROP 8 v9 — pager + tap-to-place + sign-every-page */
+/* SPIDERWEB DROP 8 v10 — single merged sign button */
 (function () {
   "use strict";
   if (window.__DROP8__) return;
@@ -21,7 +21,7 @@
       filter:drop-shadow(2px 2px 0 rgba(0,0,0,.6))}
     .sw-every{display:flex;gap:10px;align-items:center;margin:10px 0 0;color:var(--ink);font-size:.95rem}
     .sw-every input{width:18px;height:18px;accent-color:var(--red)}
-    #swSignAll,#swSignHere{margin-top:10px;margin-right:10px}
+    #swSign{margin-top:10px}
   `;
   document.head.appendChild(style);
 
@@ -43,6 +43,33 @@
     ctx.fillText(name, 24, 78, 580);
     return c.toDataURL("image/png");
   }
+  function canvasHasInk(c) {
+    const t = document.createElement("canvas");
+    t.width = c.width; t.height = c.height;
+    const x = t.getContext("2d");
+    x.drawImage(c, 0, 0);
+    const d = x.getImageData(0, 0, t.width, t.height).data;
+    for (let i = 3; i < d.length; i += 4) { if (d[i] > 0) return true; }
+    return false;
+  }
+  function signerName() {
+    const modal = document.getElementById("signModal");
+    const el = modal.querySelector("#signName") ||
+      Array.from(modal.querySelectorAll("input")).find((i) => (i.type || "text") === "text");
+    return (el && el.value.trim()) || ((state.profile && state.profile.name) || "Signer");
+  }
+  function getInk() {
+    const modal = document.getElementById("signModal");
+    const tab = modal.querySelector(".sign-tab.active");
+    const isDraw = tab && /draw/i.test(tab.textContent || "");
+    if (isDraw) {
+      const c = modal.querySelector(".sign-pad:not(.hidden) canvas") ||
+        Array.from(modal.querySelectorAll(".sign-pad canvas"))[0];
+      if (!c || !canvasHasInk(c)) { toast("Draw your signature first — or switch to One-click.", "err"); return null; }
+      return { dataUrl: c.toDataURL("image/png"), method: "gesture" };
+    }
+    return { dataUrl: typedInk8(signerName()), method: "one-click" };
+  }
 
   function viewer(modal) {
     let v = modal.querySelector(".sw-viewer");
@@ -51,43 +78,41 @@
     v = document.createElement("div");
     v.className = "sw-viewer";
     v.innerHTML = `
-      <div class="sw-status">Tap a page to choose the exact spot — then press ⚡ Sign at tapped spot (or use the checkbox for every page).</div>
+      <div class="sw-status">Flip pages with ◀ ▶ — tap the exact spot, pick your ink (one-click or draw), then press the one SIGN button.</div>
       <div class="sw-pager"><button type="button" data-pg="prev">◀</button><span class="sw-count"></span><button type="button" data-pg="next">▶</button></div>
       <div class="sw-pagebox"></div>
       <label class="sw-every"><input type="checkbox" id="swEvery" /> Sign every page at the bottom</label>
-      <div>
-        <button id="swSignHere" class="btn hidden" type="button">⚡ Sign at tapped spot</button>
-        <button id="swSignAll" class="btn hidden" type="button">⚡ Sign all pages (bottom)</button>
-      </div>`;
+      <div><button id="swSign" class="btn" type="button" disabled>⚡ SIGN (tap a page first)</button></div>`;
     head.insertAdjacentElement("afterend", v);
     const box = v.querySelector(".sw-pagebox");
     v.querySelector('[data-pg="prev"]').addEventListener("click", () => step(box, -1));
     v.querySelector('[data-pg="next"]').addEventListener("click", () => step(box, 1));
-    v.querySelector("#swEvery").addEventListener("change", (e) => {
-      v.querySelector("#swSignAll").classList.toggle("hidden", !e.target.checked);
-    });
-    v.querySelector("#swSignAll").addEventListener("click", signAllPages);
-    v.querySelector("#swSignHere").addEventListener("click", signAtTap);
+    v.querySelector("#swEvery").addEventListener("change", () => refreshSignBtn(v));
+    v.querySelector("#swSign").addEventListener("click", signMerged);
     box.addEventListener("click", (e) => {
       const c = e.target.closest("canvas");
       if (!c) return;
       const idx = Array.from(box.querySelectorAll("canvas")).indexOf(c);
       const r = c.getBoundingClientRect();
-      const xPct = (e.clientX - r.left) / r.width;
-      const yPct = (e.clientY - r.top) / r.height;
-      tap = { page: idx + 1, xPct, yPct };
+      tap = { page: idx + 1, xPct: (e.clientX - r.left) / r.width, yPct: (e.clientY - r.top) / r.height };
       let mark = box.querySelector(".sw-mark");
       if (!mark) { mark = document.createElement("div"); mark.className = "sw-mark"; box.appendChild(mark); }
       mark.textContent = "🕸️";
-      mark.style.left = (c.offsetLeft + xPct * c.offsetWidth) + "px";
-      mark.style.top = (c.offsetTop + yPct * c.offsetHeight) + "px";
-      const btn = v.querySelector("#swSignHere");
-      btn.classList.remove("hidden");
-      btn.textContent = "⚡ Sign at tapped spot (PAGE " + tap.page + ")";
+      mark.style.left = (c.offsetLeft + tap.xPct * c.offsetWidth) + "px";
+      mark.style.top = (c.offsetTop + tap.yPct * c.offsetHeight) + "px";
+      mark.style.display = "";
+      refreshSignBtn(v);
     });
     return v;
   }
   function setStatus(v, t) { v.querySelector(".sw-status").textContent = t; }
+  function refreshSignBtn(v) {
+    const btn = v.querySelector("#swSign");
+    const every = v.querySelector("#swEvery").checked;
+    if (every) { btn.disabled = false; btn.textContent = "⚡ SIGN ALL PAGES (BOTTOM)"; }
+    else if (tap) { btn.disabled = false; btn.textContent = "⚡ SIGN PAGE " + tap.page + " AT TAPPED SPOT"; }
+    else { btn.disabled = true; btn.textContent = "⚡ SIGN (tap a page first)"; }
+  }
 
   async function getPdfSource(modal) {
     const h3 = modal.querySelector(".modal-head h3");
@@ -139,8 +164,14 @@
       const caps = Array.from(modal.querySelectorAll("p,div,span")).filter((el) =>
         el.children.length === 0 && /preview shows/i.test(el.textContent || ""));
       if (caps[0] && caps[0].parentElement) caps[0].parentElement.style.display = "none";
-      setStatus(v, "Tap a page to choose the exact spot — then press ⚡ Sign at tapped spot (or use the checkbox for every page).");
+      // hide the old duplicate sign buttons
+      Array.from(modal.querySelectorAll("button")).forEach((b) => {
+        const t = (b.textContent || "").toLowerCase();
+        if (t.includes("sign with one click") || t.includes("sign with drawing")) b.style.display = "none";
+      });
+      setStatus(v, "Flip pages with ◀ ▶ — tap the exact spot, pick your ink, then press the one SIGN button.");
       show(box, 0);
+      refreshSignBtn(v);
     } catch (e) {
       console.warn("drop8:", e);
       setStatus(v, "drop8 failed: " + (e.message || e));
@@ -163,68 +194,59 @@
   }
   function step(box, d) { show(box, parseInt(box.dataset.cur || "0", 10) + d); }
 
-  async function saveSigned(pdfDoc, label, extra) {
+  async function saveSigned(pdfDoc, label, extra, ink) {
     const out = await pdfDoc.save();
     const safe = (cachedDoc.fileName || cachedDoc.title || "doc").replace(/[^\w.\-]+/g, "-");
     const path = "signed/" + state.user.uid + "/" + Date.now() + "-" + safe;
     const up = await supabaseClient.storage.from(SUPABASE_BUCKET).upload(path, new Blob([out], { type: "application/pdf" }), { cacheControl: "3600", upsert: false });
     if (up.error) throw up.error;
     const pub = supabaseClient.storage.from(SUPABASE_BUCKET).getPublicUrl(path).data.publicUrl;
-    const name = (state.profile && state.profile.name) || "Signer";
     await db.collection("c").doc("docs").collection("list").doc(cachedDoc.id).update({
       signatures: firebase.firestore.FieldValue.arrayUnion(Object.assign({
-        name, email: state.user.email || "", uid: state.user.uid,
-        method: "one-click", device: (navigator.userAgent || "") + " · " + new Date().toLocaleString(),
-        signedAt: new Date().toISOString(), ink: typedInk8(name), fileUrl: pub, page: label
+        name: signerName(), email: state.user.email || "", uid: state.user.uid,
+        method: ink.method, device: (navigator.userAgent || "") + " · " + new Date().toLocaleString(),
+        signedAt: new Date().toISOString(), ink: ink.dataUrl, fileUrl: pub, page: label
       }, extra || {}))
     });
     return pub;
   }
 
-  async function signAtTap() {
+  async function signMerged() {
     if (!cachedBytes || !cachedDoc) { toast("PDF not loaded yet.", "err"); return; }
-    if (!tap) { toast("Tap the page first.", "err"); return; }
     if (!window.PDFLib) { toast("pdf-lib missing.", "err"); return; }
+    const v = document.getElementById("signModal").querySelector(".sw-viewer");
+    const every = v.querySelector("#swEvery").checked;
+    if (!every && !tap) { toast("Tap the page to choose the spot first.", "err"); return; }
+    const ink = getInk();
+    if (!ink) return;
     try {
-      toast("Stamping page " + tap.page + "…");
+      toast(every ? "Stamping every page…" : "Stamping page " + tap.page + "…");
       const pdfDoc = await PDFLib.PDFDocument.load(cachedBytes.slice(0));
-      const ink = await pdfDoc.embedPng(typedInk8((state.profile && state.profile.name) || "Signer"));
-      const pg = pdfDoc.getPages()[tap.page - 1];
-      const { width, height } = pg.getSize();
-      const w = 190;
-      const h = w * ink.height / ink.width;
-      pg.drawImage(ink, { x: tap.xPct * width - w / 2, y: (1 - tap.yPct) * height - h / 2, width: w, height: h });
-      await saveSigned(pdfDoc, tap.page, { xPct: tap.xPct, yPct: tap.yPct });
-      toast("Signed page " + tap.page + " at the tapped spot.", "ok");
+      const emb = await pdfDoc.embedPng(ink.dataUrl);
+      const pages = pdfDoc.getPages();
+      if (every) {
+        pages.forEach((pg) => {
+          const { width } = pg.getSize();
+          const w = 190;
+          const h = w * emb.height / emb.width;
+          pg.drawImage(emb, { x: (width - w) / 2, y: 34, width: w, height: h });
+        });
+      } else {
+        const pg = pages[tap.page - 1];
+        const { width, height } = pg.getSize();
+        const w = 190;
+        const h = w * emb.height / emb.width;
+        pg.drawImage(emb, { x: tap.xPct * width - w / 2, y: (1 - tap.yPct) * height - h / 2, width: w, height: h });
+      }
+      await saveSigned(pdfDoc, every ? "all-pages-bottom" : tap.page, every ? {} : { xPct: tap.xPct, yPct: tap.yPct }, ink);
+      toast(every ? "Signed every page at the bottom." : "Signed page " + tap.page + " at the tapped spot.", "ok");
       tap = null;
-      const v = document.getElementById("signModal").querySelector(".sw-viewer");
-      v.querySelector("#swSignHere").classList.add("hidden");
       const mark = v.querySelector(".sw-mark");
       if (mark) mark.remove();
+      refreshSignBtn(v);
     } catch (e) {
       console.error(e);
       toast("Sign failed: " + (e.message || e), "err");
-    }
-  }
-
-  async function signAllPages() {
-    if (!cachedBytes || !cachedDoc) { toast("PDF not loaded yet.", "err"); return; }
-    if (!window.PDFLib) { toast("pdf-lib missing.", "err"); return; }
-    try {
-      toast("Stamping every page…");
-      const pdfDoc = await PDFLib.PDFDocument.load(cachedBytes.slice(0));
-      const ink = await pdfDoc.embedPng(typedInk8((state.profile && state.profile.name) || "Signer"));
-      pdfDoc.getPages().forEach((pg) => {
-        const { width } = pg.getSize();
-        const w = 190;
-        const h = w * ink.height / ink.width;
-        pg.drawImage(ink, { x: (width - w) / 2, y: 34, width: w, height: h });
-      });
-      await saveSigned(pdfDoc, "all-pages-bottom");
-      toast("Signed every page at the bottom — signed copy saved.", "ok");
-    } catch (e) {
-      console.error(e);
-      toast("Sign-all failed: " + (e.message || e), "err");
     }
   }
 
@@ -257,6 +279,6 @@
     new MutationObserver(() => setTimeout(fix, 300)).observe(modal, { subtree: true, childList: true, attributes: true });
   }
 
-  console.log("SPIDERWEB Drop 8 v9 loaded.");
+  console.log("SPIDERWEB Drop 8 v10 loaded.");
 })();
 /* SPIDERWEB-DROP8-END */
