@@ -1,4 +1,4 @@
-/* SPIDERWEB DROP 8 v2 — scrollable PDF preview (safe caption handling) */
+/* SPIDERWEB DROP 8 v3 — fully unclipped, scrollable PDF preview */
 (function () {
   "use strict";
   if (window.__DROP8__) return;
@@ -7,10 +7,11 @@
   const style = document.createElement("style");
   style.textContent = `
     .pg-tag{font-family:"Bangers",cursive;letter-spacing:.08em;color:var(--mut);font-size:.85rem;margin:2px 0 -6px}
-    #signModal .sw-pdfbox{max-height:62vh;overflow-y:auto;display:grid;gap:14px;padding:10px;
+    #signModal .sw-pdfbox{max-height:62vh;overflow-y:auto!important;display:grid;gap:14px;padding:10px;
       border:2px dashed var(--line);border-radius:14px;background:rgba(18,6,9,.35)}
-    #signModal .sw-pdfbox canvas{width:100%!important;height:auto!important;display:block;border-radius:8px;
-      box-shadow:4px 4px 0 rgba(0,0,0,.55);cursor:crosshair}
+    #signModal .sw-pdfbox div{height:auto!important;max-height:none!important;min-height:0!important;overflow:visible!important}
+    #signModal .sw-pdfbox canvas{width:100%!important;height:auto!important;max-height:none!important;
+      object-fit:initial!important;display:block;border-radius:8px;box-shadow:4px 4px 0 rgba(0,0,0,.55);cursor:crosshair}
   `;
   document.head.appendChild(style);
 
@@ -27,6 +28,21 @@
     return box;
   }
 
+  function unclip(box) {
+    [box].concat(Array.from(box.querySelectorAll("div"))).forEach((el) => {
+      el.style.height = "";
+      el.style.maxHeight = "";
+      el.style.minHeight = "";
+      el.style.overflow = "";
+    });
+    Array.from(box.querySelectorAll("canvas")).forEach((c) => {
+      c.style.width = "100%";
+      c.style.height = "auto";
+      c.style.maxHeight = "none";
+      c.style.objectFit = "initial";
+    });
+  }
+
   function tagPages(box) {
     Array.from(box.querySelectorAll("canvas")).forEach((c, i) => {
       if (c.previousElementSibling && c.previousElementSibling.classList.contains("pg-tag")) return;
@@ -38,13 +54,11 @@
   }
 
   function updateCaption(modal, count) {
-    // ONLY leaf nodes (no child elements) that contain the old caption text
     const nodes = Array.from(modal.querySelectorAll("p, div, span")).filter((el) => {
       if (el.children.length > 0) return false;
       return /first \d+ of|preview shows/i.test(el.textContent || "");
     });
-    const cap = nodes[0];
-    if (cap) cap.textContent = "Scroll to view all " + count + " pages. Tap a page to place your signature.";
+    if (nodes[0]) nodes[0].textContent = "Scroll to view all " + count + " pages. Tap a page to place your signature.";
   }
 
   async function addRemainingPages(modal, box) {
@@ -82,12 +96,14 @@
     if (!modal || modal.classList.contains("hidden") || busy) return;
     const box = findBox(modal);
     if (!box) return;
+    unclip(box);
     tagPages(box);
     const key = ((modal.querySelector(".modal-head h3") || {}).textContent || "") + "|" + box.querySelectorAll("canvas").length;
     if (key === lastKey) return;
     lastKey = key;
     busy = true;
     await addRemainingPages(modal, box);
+    unclip(box);
     tagPages(box);
     busy = false;
   }
@@ -97,6 +113,6 @@
     new MutationObserver(() => setTimeout(fix, 250)).observe(modal, { subtree: true, childList: true, attributes: true });
   }
 
-  console.log("SPIDERWEB Drop 8 v2 loaded.");
+  console.log("SPIDERWEB Drop 8 v3 loaded.");
 })();
 /* SPIDERWEB-DROP8-END */
