@@ -1,4 +1,4 @@
-/* SPIDERWEB DROP 8 v3 — fully unclipped, scrollable PDF preview */
+/* SPIDERWEB DROP 8 v4 — all pages, verified by page count */
 (function () {
   "use strict";
   if (window.__DROP8__) return;
@@ -18,6 +18,8 @@
   let busy = false;
   let lastKey = "";
 
+  function norm(s) { return (s || "").toLowerCase().replace(/[^a-z0-9]+/g, ""); }
+
   function findBox(modal) {
     const canvases = Array.from(modal.querySelectorAll("canvas"));
     if (!canvases.length) return null;
@@ -30,16 +32,10 @@
 
   function unclip(box) {
     [box].concat(Array.from(box.querySelectorAll("div"))).forEach((el) => {
-      el.style.height = "";
-      el.style.maxHeight = "";
-      el.style.minHeight = "";
-      el.style.overflow = "";
+      el.style.height = ""; el.style.maxHeight = ""; el.style.minHeight = ""; el.style.overflow = "";
     });
     Array.from(box.querySelectorAll("canvas")).forEach((c) => {
-      c.style.width = "100%";
-      c.style.height = "auto";
-      c.style.maxHeight = "none";
-      c.style.objectFit = "initial";
+      c.style.width = "100%"; c.style.height = "auto"; c.style.maxHeight = "none"; c.style.objectFit = "initial";
     });
   }
 
@@ -63,32 +59,49 @@
 
   async function addRemainingPages(modal, box) {
     if (!window.pdfjsLib) return;
-    const titleEl = modal.querySelector(".modal-head h3");
-    const title = (titleEl ? titleEl.textContent : "").trim();
-    const doc = (state.docs || []).find((d) =>
-      title && ((d.title || "") === title || (d.fileName || "") === title ||
-        title.includes(d.fileName || "\u0000") || (d.title || "\u0000").includes(title)));
-    if (!doc || !doc.publicUrl) return;
     const shown = box.querySelectorAll("canvas").length;
-    try {
-      const buf = await fetch(doc.publicUrl).then((r) => r.arrayBuffer());
-      const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
-      if (pdf.numPages <= shown) { updateCaption(modal, pdf.numPages); return; }
-      for (let n = shown + 1; n <= pdf.numPages; n++) {
-        const page = await pdf.getPage(n);
-        const vp = page.getViewport({ scale: 1.4 });
-        const c = document.createElement("canvas");
-        c.width = Math.floor(vp.width);
-        c.height = Math.floor(vp.height);
-        await page.render({ canvasContext: c.getContext("2d"), viewport: vp }).promise;
-        const t = document.createElement("div");
-        t.className = "pg-tag";
-        t.textContent = "PAGE " + n;
-        box.appendChild(t);
-        box.appendChild(c);
-      }
-      updateCaption(modal, pdf.numPages);
-    } catch (e) { console.warn("drop8 extra pages:", e); }
+    const m = (modal.textContent || "").match(/first \d+ of (\d+)/i);
+    const total = m ? parseInt(m[1], 10) : 0;
+    if (total && total <= shown) { updateCaption(modal, total); return; }
+
+    const titleEl = modal.querySelector(".modal-head h3");
+    const nt = norm(titleEl ? titleEl.textContent : "");
+    function score(x) {
+      const t = norm(x.d.title || "");
+      const f = norm((x.d.fileName || "").replace(/\.pdf$/i, ""));
+      let s = 0;
+      if (t && nt && (t === nt || t.includes(nt) || nt.includes(t))) s += 100;
+      if (f && nt && (f === nt || f.includes(nt) || nt.includes(f))) s += 50;
+      return s;
+    }
+    const cands = (state.docs || [])
+      .map((d) => ({ d, u: d.publicUrl || d.fileUrl || d.url || "" }))
+      .filter((x) => x.u && /pdf/i.test((x.d.fileType || "") + (x.d.fileName || "")))
+      .sort((a, b) => score(b) - score(a));
+
+    for (const x of cands.slice(0, 6)) {
+      try {
+        const buf = await fetch(x.u).then((r) => r.arrayBuffer());
+        const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+        if (pdf.numPages <= shown) continue;
+        if (total && pdf.numPages !== total) continue;
+        for (let n = shown + 1; n <= pdf.numPages; n++) {
+          const page = await pdf.getPage(n);
+          const vp = page.getViewport({ scale: 1.4 });
+          const c = document.createElement("canvas");
+          c.width = Math.floor(vp.width);
+          c.height = Math.floor(vp.height);
+          await page.render({ canvasContext: c.getContext("2d"), viewport: vp }).promise;
+          const t = document.createElement("div");
+          t.className = "pg-tag";
+          t.textContent = "PAGE " + n;
+          box.appendChild(t);
+          box.appendChild(c);
+        }
+        updateCaption(modal, pdf.numPages);
+        return;
+      } catch (e) { console.warn("drop8 candidate failed:", e); }
+    }
   }
 
   async function fix() {
@@ -113,6 +126,6 @@
     new MutationObserver(() => setTimeout(fix, 250)).observe(modal, { subtree: true, childList: true, attributes: true });
   }
 
-  console.log("SPIDERWEB Drop 8 v3 loaded.");
+  console.log("SPIDERWEB Drop 8 v4 loaded.");
 })();
 /* SPIDERWEB-DROP8-END */
