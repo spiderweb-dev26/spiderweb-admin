@@ -1,4 +1,4 @@
-/* SPIDERWEB DROP 8 — full-page scrollable PDF preview in the sign modal */
+/* SPIDERWEB DROP 8 v2 — scrollable PDF preview (safe caption handling) */
 (function () {
   "use strict";
   if (window.__DROP8__) return;
@@ -28,14 +28,23 @@
   }
 
   function tagPages(box) {
-    const canvases = Array.from(box.querySelectorAll("canvas"));
-    canvases.forEach((c, i) => {
+    Array.from(box.querySelectorAll("canvas")).forEach((c, i) => {
       if (c.previousElementSibling && c.previousElementSibling.classList.contains("pg-tag")) return;
       const t = document.createElement("div");
       t.className = "pg-tag";
       t.textContent = "PAGE " + (i + 1);
       box.insertBefore(t, c);
     });
+  }
+
+  function updateCaption(modal, count) {
+    // ONLY leaf nodes (no child elements) that contain the old caption text
+    const nodes = Array.from(modal.querySelectorAll("p, div, span")).filter((el) => {
+      if (el.children.length > 0) return false;
+      return /first \d+ of|preview shows/i.test(el.textContent || "");
+    });
+    const cap = nodes[0];
+    if (cap) cap.textContent = "Scroll to view all " + count + " pages. Tap a page to place your signature.";
   }
 
   async function addRemainingPages(modal, box) {
@@ -50,7 +59,7 @@
     try {
       const buf = await fetch(doc.publicUrl).then((r) => r.arrayBuffer());
       const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
-      if (pdf.numPages <= shown) return;
+      if (pdf.numPages <= shown) { updateCaption(modal, pdf.numPages); return; }
       for (let n = shown + 1; n <= pdf.numPages; n++) {
         const page = await pdf.getPage(n);
         const vp = page.getViewport({ scale: 1.4 });
@@ -64,8 +73,7 @@
         box.appendChild(t);
         box.appendChild(c);
       }
-      const cap = Array.from(modal.querySelectorAll("p,div")).find((el) => /first 5 of/i.test(el.textContent || ""));
-      if (cap) cap.textContent = "Scroll to view all " + pdf.numPages + " pages. Tap a page to place your signature.";
+      updateCaption(modal, pdf.numPages);
     } catch (e) { console.warn("drop8 extra pages:", e); }
   }
 
@@ -75,7 +83,7 @@
     const box = findBox(modal);
     if (!box) return;
     tagPages(box);
-    const key = (modal.querySelector(".modal-head h3") || {}).textContent + "|" + box.querySelectorAll("canvas").length;
+    const key = ((modal.querySelector(".modal-head h3") || {}).textContent || "") + "|" + box.querySelectorAll("canvas").length;
     if (key === lastKey) return;
     lastKey = key;
     busy = true;
@@ -89,6 +97,6 @@
     new MutationObserver(() => setTimeout(fix, 250)).observe(modal, { subtree: true, childList: true, attributes: true });
   }
 
-  console.log("SPIDERWEB Drop 8 loaded — scroll the whole doc.");
+  console.log("SPIDERWEB Drop 8 v2 loaded.");
 })();
 /* SPIDERWEB-DROP8-END */
