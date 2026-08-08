@@ -1,4 +1,4 @@
-/* SPIDERWEB DROP 8 v10 — single merged sign button */
+/* SPIDERWEB DROP 8 v11 — rotation-proof tap stamping */
 (function () {
   "use strict";
   if (window.__DROP8__) return;
@@ -164,7 +164,6 @@
       const caps = Array.from(modal.querySelectorAll("p,div,span")).filter((el) =>
         el.children.length === 0 && /preview shows/i.test(el.textContent || ""));
       if (caps[0] && caps[0].parentElement) caps[0].parentElement.style.display = "none";
-      // hide the old duplicate sign buttons
       Array.from(modal.querySelectorAll("button")).forEach((b) => {
         const t = (b.textContent || "").toLowerCase();
         if (t.includes("sign with one click") || t.includes("sign with drawing")) b.style.display = "none";
@@ -193,6 +192,19 @@
     box.scrollTop = 0;
   }
   function step(box, d) { show(box, parseInt(box.dataset.cur || "0", 10) + d); }
+
+  // rotation-proof: display tap -> PDF user space via pdf.js
+  async function tapToPdfPoint(pageNo, xPct, yPct) {
+    const jsDoc = await pdfjsLib.getDocument({ data: cachedBytes.slice(0) }).promise;
+    const jpage = await jsDoc.getPage(pageNo);
+    const vp = jpage.getViewport({ scale: 1 });
+    if (vp.convertToPdfPoint) {
+      const pt = vp.convertToPdfPoint(xPct * vp.width, yPct * vp.height);
+      return { x: pt[0], y: pt[1] };
+    }
+    const { width, height } = vp;
+    return { x: xPct * width, y: (1 - yPct) * height };
+  }
 
   async function saveSigned(pdfDoc, label, extra, ink) {
     const out = await pdfDoc.save();
@@ -233,13 +245,13 @@
         });
       } else {
         const pg = pages[tap.page - 1];
-        const { width, height } = pg.getSize();
+        const pt = await tapToPdfPoint(tap.page, tap.xPct, tap.yPct);
         const w = 190;
         const h = w * emb.height / emb.width;
-        pg.drawImage(emb, { x: tap.xPct * width - w / 2, y: (1 - tap.yPct) * height - h / 2, width: w, height: h });
+        pg.drawImage(emb, { x: pt.x - w / 2, y: pt.y - h / 2, width: w, height: h });
       }
       await saveSigned(pdfDoc, every ? "all-pages-bottom" : tap.page, every ? {} : { xPct: tap.xPct, yPct: tap.yPct }, ink);
-      toast(every ? "Signed every page at the bottom." : "Signed page " + tap.page + " at the tapped spot.", "ok");
+      toast(every ? "Signed every page at the bottom." : "Signed page " + tap.page + " exactly where you tapped.", "ok");
       tap = null;
       const mark = v.querySelector(".sw-mark");
       if (mark) mark.remove();
@@ -279,6 +291,6 @@
     new MutationObserver(() => setTimeout(fix, 300)).observe(modal, { subtree: true, childList: true, attributes: true });
   }
 
-  console.log("SPIDERWEB Drop 8 v10 loaded.");
+  console.log("SPIDERWEB Drop 8 v11 loaded.");
 })();
 /* SPIDERWEB-DROP8-END */
