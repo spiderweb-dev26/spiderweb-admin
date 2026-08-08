@@ -1,4 +1,4 @@
-/* SPIDERWEB DROP 8 v5 — single-page viewer with prev/next arrows */
+/* SPIDERWEB DROP 8 v6 — self-sufficient single-page pager for the sign modal */
 (function () {
   "use strict";
   if (window.__DROP8__) return;
@@ -29,14 +29,17 @@
 
   function norm(s) { return (s || "").toLowerCase().replace(/[^a-z0-9]+/g, ""); }
 
-  function findBox(modal) {
+  function getContainer(modal) {
     const canvases = Array.from(modal.querySelectorAll("canvas"));
-    if (!canvases.length) return null;
-    let box = canvases[0].parentElement;
-    while (box && box !== modal && !canvases.every((c) => box.contains(c))) box = box.parentElement;
-    if (!box || box === modal) box = canvases[0].parentElement;
-    box.classList.add("sw-pdfbox");
-    return box;
+    if (canvases.length) {
+      let box = canvases[0].parentElement;
+      while (box && box !== modal && !canvases.every((c) => box.contains(c))) box = box.parentElement;
+      if (box && box !== modal) { box.classList.add("sw-pdfbox"); return box; }
+    }
+    const caps = Array.from(modal.querySelectorAll("p,div,span")).filter((el) =>
+      el.children.length === 0 && /preview shows/i.test(el.textContent || ""));
+    if (caps[0] && caps[0].parentElement) { caps[0].parentElement.classList.add("sw-pdfbox"); return caps[0].parentElement; }
+    return null;
   }
 
   function unclip(box) {
@@ -50,12 +53,12 @@
 
   function tagPages(box) {
     Array.from(box.querySelectorAll("canvas")).forEach((c, i) => {
-      if (c.previousElementSibling && c.previousElementSibling.classList.contains("pg-tag")) return;
-      const t = document.createElement("div");
-      t.className = "pg-tag";
-      box.insertBefore(t, c);
+      if (!(c.previousElementSibling && c.previousElementSibling.classList.contains("pg-tag"))) {
+        const t = document.createElement("div");
+        t.className = "pg-tag";
+        box.insertBefore(t, c);
+      }
     });
-    // keep numbers correct
     Array.from(box.querySelectorAll("canvas")).forEach((c, i) => {
       if (c.previousElementSibling && c.previousElementSibling.classList.contains("pg-tag")) {
         c.previousElementSibling.textContent = "PAGE " + (i + 1);
@@ -76,35 +79,46 @@
     return "";
   }
 
-  async function ensureAllPages(modal, box) {
+  async function renderPage(pdf, n) {
+    const page = await pdf.getPage(n);
+    const vp = page.getViewport({ scale: 1.4 });
+    const c = document.createElement("canvas");
+    c.width = Math.floor(vp.width);
+    c.height = Math.floor(vp.height);
+    await page.render({ canvasContext: c.getContext("2d"), viewport: vp }).promise;
+    return c;
+  }
+
+  async function ensurePages(modal, box) {
     if (!window.pdfjsLib) return;
-    const shown = box.querySelectorAll("canvas").length;
     const m = (modal.textContent || "").match(/first \d+ of (\d+)/i);
     const total = m ? parseInt(m[1], 10) : 0;
+    const shown = box.querySelectorAll("canvas").length;
     if (total && shown >= total) return;
     const url = findPdfUrl(modal);
     if (!url) { console.warn("drop8: pdf url not found"); return; }
     try {
       const buf = await fetch(url).then((r) => r.arrayBuffer());
       const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
-      if (pdf.numPages <= shown) return;
-      for (let n = shown + 1; n <= pdf.numPages; n++) {
-        const page = await pdf.getPage(n);
-        const vp = page.getViewport({ scale: 1.4 });
-        const c = document.createElement("canvas");
-        c.width = Math.floor(vp.width);
-        c.height = Math.floor(vp.height);
-        await page.render({ canvasContext: c.getContext("2d"), viewport: vp }).promise;
-        const t = document.createElement("div");
-        t.className = "pg-tag";
-        box.appendChild(t);
-        box.appendChild(c);
+      if (shown === 0) {
+        for (let n = 1; n <= pdf.numPages; n++) {
+          const t = document.createElement("div"); t.className = "pg-tag";
+          box.appendChild(t);
+          box.appendChild(await renderPage(pdf, n));
+        }
+      } else {
+        for (let n = shown + 1; n <= pdf.numPages; n++) {
+          const t = document.createElement("div"); t.className = "pg-tag";
+          box.appendChild(t);
+          box.appendChild(await renderPage(pdf, n));
+        }
       }
     } catch (e) { console.warn("drop8 render failed:", e); }
   }
 
-  function buildPager(modal, box) {
-    if (!box.querySelector(".sw-pager")) {
+  function buildPager(box) {
+    if (!box.querySelectorAll("canvas").length) return;
+    if (!box.parentElement.querySelector(".sw-pager")) {
       const bar = document.createElement("div");
       bar.className = "sw-pager";
       bar.innerHTML = '<button type="button" data-pg="prev">◀</button><span class="sw-count"></span><button type="button" data-pg="next">▶</button>';
@@ -112,8 +126,7 @@
       bar.querySelector('[data-pg="prev"]').addEventListener("click", () => step(box, -1));
       bar.querySelector('[data-pg="next"]').addEventListener("click", () => step(box, 1));
     }
-    if (!box.dataset.cur) show(box, 0);
-    else show(box, parseInt(box.dataset.cur, 10));
+    show(box, parseInt(box.dataset.cur || "0", 10));
   }
 
   function show(box, i) {
@@ -134,25 +147,26 @@
     }
     box.scrollTop = 0;
   }
-  function step(box, d) { show(box, (parseInt(box.dataset.cur || "0", 10)) + d); }
+  function step(box, d) { show(box, parseInt(box.dataset.cur || "0", 10) + d); }
 
   async function fix() {
     const modal = document.getElementById("signModal");
     if (!modal || modal.classList.contains("hidden") || busy) return;
-    const box = findBox(modal);
+    const box = getContainer(modal);
     if (!box) return;
     unclip(box);
-    tagPages(box);
     const key = ((modal.querySelector(".modal-head h3") || {}).textContent || "") + "|" + box.querySelectorAll("canvas").length;
     if (key !== lastKey) {
       lastKey = key;
       busy = true;
-      await ensureAllPages(modal, box);
+      await ensurePages(modal, box);
       unclip(box);
       tagPages(box);
       busy = false;
+    } else {
+      tagPages(box);
     }
-    buildPager(modal, box);
+    buildPager(box);
   }
 
   document.addEventListener("keydown", (e) => {
@@ -166,9 +180,9 @@
 
   const modal = document.getElementById("signModal");
   if (modal) {
-    new MutationObserver(() => setTimeout(fix, 250)).observe(modal, { subtree: true, childList: true, attributes: true });
+    new MutationObserver(() => setTimeout(fix, 300)).observe(modal, { subtree: true, childList: true, attributes: true });
   }
 
-  console.log("SPIDERWEB Drop 8 v5 loaded.");
+  console.log("SPIDERWEB Drop 8 v6 loaded.");
 })();
 /* SPIDERWEB-DROP8-END */
