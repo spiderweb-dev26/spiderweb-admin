@@ -1,4 +1,4 @@
-/* SPIDERWEB DROP 8 v8 — Firestore-sourced pager + sign-every-page */
+/* SPIDERWEB DROP 8 v9 — pager + tap-to-place + sign-every-page */
 (function () {
   "use strict";
   if (window.__DROP8__) return;
@@ -14,12 +14,14 @@
     .sw-pager button:hover{border-color:rgba(230,36,46,.45)}
     .sw-pager button:disabled{opacity:.35;cursor:not-allowed}
     .sw-pager .sw-count{font-family:"Bangers",cursive;letter-spacing:.08em}
-    .sw-pagebox{max-height:60vh;overflow:auto;border:2px dashed var(--line);border-radius:14px;padding:10px;background:rgba(18,6,9,.35)}
+    .sw-pagebox{position:relative;max-height:60vh;overflow:auto;border:2px dashed var(--line);border-radius:14px;padding:10px;background:rgba(18,6,9,.35)}
     .sw-pagebox canvas{width:100%;height:auto;display:none;border-radius:8px;box-shadow:4px 4px 0 rgba(0,0,0,.55);cursor:crosshair}
     .sw-pagebox canvas.sw-cur{display:block}
+    .sw-mark{position:absolute;z-index:5;transform:translate(-50%,-50%);font-size:26px;pointer-events:none;
+      filter:drop-shadow(2px 2px 0 rgba(0,0,0,.6))}
     .sw-every{display:flex;gap:10px;align-items:center;margin:10px 0 0;color:var(--ink);font-size:.95rem}
     .sw-every input{width:18px;height:18px;accent-color:var(--red)}
-    #swSignAll{margin-top:10px}
+    #swSignAll,#swSignHere{margin-top:10px;margin-right:10px}
   `;
   document.head.appendChild(style);
 
@@ -27,6 +29,7 @@
   let lastKey = "";
   let cachedBytes = null;
   let cachedDoc = null;
+  let tap = null;
 
   function norm(s) { return (s || "").toLowerCase().replace(/[^a-z0-9]+/g, ""); }
   function typedInk8(name) {
@@ -48,11 +51,14 @@
     v = document.createElement("div");
     v.className = "sw-viewer";
     v.innerHTML = `
-      <div class="sw-status"></div>
+      <div class="sw-status">Tap a page to choose the exact spot — then press ⚡ Sign at tapped spot (or use the checkbox for every page).</div>
       <div class="sw-pager"><button type="button" data-pg="prev">◀</button><span class="sw-count"></span><button type="button" data-pg="next">▶</button></div>
       <div class="sw-pagebox"></div>
       <label class="sw-every"><input type="checkbox" id="swEvery" /> Sign every page at the bottom</label>
-      <button id="swSignAll" class="btn hidden" type="button">⚡ Sign all pages (bottom)</button>`;
+      <div>
+        <button id="swSignHere" class="btn hidden" type="button">⚡ Sign at tapped spot</button>
+        <button id="swSignAll" class="btn hidden" type="button">⚡ Sign all pages (bottom)</button>
+      </div>`;
     head.insertAdjacentElement("afterend", v);
     const box = v.querySelector(".sw-pagebox");
     v.querySelector('[data-pg="prev"]').addEventListener("click", () => step(box, -1));
@@ -61,6 +67,24 @@
       v.querySelector("#swSignAll").classList.toggle("hidden", !e.target.checked);
     });
     v.querySelector("#swSignAll").addEventListener("click", signAllPages);
+    v.querySelector("#swSignHere").addEventListener("click", signAtTap);
+    box.addEventListener("click", (e) => {
+      const c = e.target.closest("canvas");
+      if (!c) return;
+      const idx = Array.from(box.querySelectorAll("canvas")).indexOf(c);
+      const r = c.getBoundingClientRect();
+      const xPct = (e.clientX - r.left) / r.width;
+      const yPct = (e.clientY - r.top) / r.height;
+      tap = { page: idx + 1, xPct, yPct };
+      let mark = box.querySelector(".sw-mark");
+      if (!mark) { mark = document.createElement("div"); mark.className = "sw-mark"; box.appendChild(mark); }
+      mark.textContent = "🕸️";
+      mark.style.left = (c.offsetLeft + xPct * c.offsetWidth) + "px";
+      mark.style.top = (c.offsetTop + yPct * c.offsetHeight) + "px";
+      const btn = v.querySelector("#swSignHere");
+      btn.classList.remove("hidden");
+      btn.textContent = "⚡ Sign at tapped spot (PAGE " + tap.page + ")";
+    });
     return v;
   }
   function setStatus(v, t) { v.querySelector(".sw-status").textContent = t; }
@@ -104,7 +128,6 @@
       const pdf = await pdfjsLib.getDocument({ data: cachedBytes.slice(0) }).promise;
       box.innerHTML = "";
       for (let n = 1; n <= pdf.numPages; n++) {
-        setStatus(v, "drop8: rendering page " + n + " / " + pdf.numPages + "…");
         const page = await pdf.getPage(n);
         const vp = page.getViewport({ scale: 1.2 });
         const c = document.createElement("canvas");
@@ -113,11 +136,10 @@
         await page.render({ canvasContext: c.getContext("2d"), viewport: vp }).promise;
         box.appendChild(c);
       }
-      // hide the old inline preview (it only shows 5)
       const caps = Array.from(modal.querySelectorAll("p,div,span")).filter((el) =>
         el.children.length === 0 && /preview shows/i.test(el.textContent || ""));
       if (caps[0] && caps[0].parentElement) caps[0].parentElement.style.display = "none";
-      setStatus(v, "");
+      setStatus(v, "Tap a page to choose the exact spot — then press ⚡ Sign at tapped spot (or use the checkbox for every page).");
       show(box, 0);
     } catch (e) {
       console.warn("drop8:", e);
@@ -135,39 +157,70 @@
     v.querySelector(".sw-count").textContent = "PAGE " + (i + 1) + " OF " + canvases.length;
     v.querySelector('[data-pg="prev"]').disabled = i === 0;
     v.querySelector('[data-pg="next"]').disabled = i === canvases.length - 1;
+    const mark = box.querySelector(".sw-mark");
+    if (mark) mark.style.display = (tap && tap.page === i + 1) ? "" : "none";
     box.scrollTop = 0;
   }
   function step(box, d) { show(box, parseInt(box.dataset.cur || "0", 10) + d); }
 
+  async function saveSigned(pdfDoc, label, extra) {
+    const out = await pdfDoc.save();
+    const safe = (cachedDoc.fileName || cachedDoc.title || "doc").replace(/[^\w.\-]+/g, "-");
+    const path = "signed/" + state.user.uid + "/" + Date.now() + "-" + safe;
+    const up = await supabaseClient.storage.from(SUPABASE_BUCKET).upload(path, new Blob([out], { type: "application/pdf" }), { cacheControl: "3600", upsert: false });
+    if (up.error) throw up.error;
+    const pub = supabaseClient.storage.from(SUPABASE_BUCKET).getPublicUrl(path).data.publicUrl;
+    const name = (state.profile && state.profile.name) || "Signer";
+    await db.collection("c").doc("docs").collection("list").doc(cachedDoc.id).update({
+      signatures: firebase.firestore.FieldValue.arrayUnion(Object.assign({
+        name, email: state.user.email || "", uid: state.user.uid,
+        method: "one-click", device: (navigator.userAgent || "") + " · " + new Date().toLocaleString(),
+        signedAt: new Date().toISOString(), ink: typedInk8(name), fileUrl: pub, page: label
+      }, extra || {}))
+    });
+    return pub;
+  }
+
+  async function signAtTap() {
+    if (!cachedBytes || !cachedDoc) { toast("PDF not loaded yet.", "err"); return; }
+    if (!tap) { toast("Tap the page first.", "err"); return; }
+    if (!window.PDFLib) { toast("pdf-lib missing.", "err"); return; }
+    try {
+      toast("Stamping page " + tap.page + "…");
+      const pdfDoc = await PDFLib.PDFDocument.load(cachedBytes.slice(0));
+      const ink = await pdfDoc.embedPng(typedInk8((state.profile && state.profile.name) || "Signer"));
+      const pg = pdfDoc.getPages()[tap.page - 1];
+      const { width, height } = pg.getSize();
+      const w = 190;
+      const h = w * ink.height / ink.width;
+      pg.drawImage(ink, { x: tap.xPct * width - w / 2, y: (1 - tap.yPct) * height - h / 2, width: w, height: h });
+      await saveSigned(pdfDoc, tap.page, { xPct: tap.xPct, yPct: tap.yPct });
+      toast("Signed page " + tap.page + " at the tapped spot.", "ok");
+      tap = null;
+      const v = document.getElementById("signModal").querySelector(".sw-viewer");
+      v.querySelector("#swSignHere").classList.add("hidden");
+      const mark = v.querySelector(".sw-mark");
+      if (mark) mark.remove();
+    } catch (e) {
+      console.error(e);
+      toast("Sign failed: " + (e.message || e), "err");
+    }
+  }
+
   async function signAllPages() {
     if (!cachedBytes || !cachedDoc) { toast("PDF not loaded yet.", "err"); return; }
     if (!window.PDFLib) { toast("pdf-lib missing.", "err"); return; }
-    const name = (state.profile && state.profile.name) || "Signer";
     try {
       toast("Stamping every page…");
       const pdfDoc = await PDFLib.PDFDocument.load(cachedBytes.slice(0));
-      const ink = await pdfDoc.embedPng(typedInk8(name));
-      const pages = pdfDoc.getPages();
-      pages.forEach((pg) => {
+      const ink = await pdfDoc.embedPng(typedInk8((state.profile && state.profile.name) || "Signer"));
+      pdfDoc.getPages().forEach((pg) => {
         const { width } = pg.getSize();
         const w = 190;
         const h = w * ink.height / ink.width;
         pg.drawImage(ink, { x: (width - w) / 2, y: 34, width: w, height: h });
       });
-      const out = await pdfDoc.save();
-      const safe = (cachedDoc.fileName || cachedDoc.title || "doc").replace(/[^\w.\-]+/g, "-");
-      const path = "signed/" + state.user.uid + "/" + Date.now() + "-" + safe;
-      const up = await supabaseClient.storage.from(SUPABASE_BUCKET).upload(path, new Blob([out], { type: "application/pdf" }), { cacheControl: "3600", upsert: false });
-      if (up.error) throw up.error;
-      const pub = supabaseClient.storage.from(SUPABASE_BUCKET).getPublicUrl(path).data.publicUrl;
-      await db.collection("c").doc("docs").collection("list").doc(cachedDoc.id).update({
-        signatures: firebase.firestore.FieldValue.arrayUnion({
-          name, email: state.user.email || "", uid: state.user.uid,
-          method: "one-click", page: "all-pages-bottom",
-          device: (navigator.userAgent || "") + " · " + new Date().toLocaleString(),
-          signedAt: new Date().toISOString(), ink: typedInk8(name), fileUrl: pub
-        })
-      });
+      await saveSigned(pdfDoc, "all-pages-bottom");
       toast("Signed every page at the bottom — signed copy saved.", "ok");
     } catch (e) {
       console.error(e);
@@ -183,6 +236,7 @@
     if (key !== lastKey) {
       lastKey = key;
       cachedBytes = null;
+      tap = null;
       busy = true;
       await loadPages(modal, v);
       busy = false;
@@ -203,6 +257,6 @@
     new MutationObserver(() => setTimeout(fix, 300)).observe(modal, { subtree: true, childList: true, attributes: true });
   }
 
-  console.log("SPIDERWEB Drop 8 v8 loaded.");
+  console.log("SPIDERWEB Drop 8 v9 loaded.");
 })();
 /* SPIDERWEB-DROP8-END */
