@@ -1,4 +1,4 @@
-/* SPIDERWEB DROP 8 v6 — self-sufficient single-page pager for the sign modal */
+/* SPIDERWEB DROP 8 v7 — instrumented self-sufficient pager */
 (function () {
   "use strict";
   if (window.__DROP8__) return;
@@ -7,6 +7,7 @@
   const style = document.createElement("style");
   style.textContent = `
     .pg-tag{font-family:"Bangers",cursive;letter-spacing:.08em;color:var(--mut);font-size:.85rem;margin:2px 0 -6px}
+    .sw-status{color:var(--mut);font-size:.85rem;margin:0 0 8px;font-style:italic}
     #signModal .sw-pdfbox{max-height:70vh;overflow-y:auto!important;padding:10px;
       border:2px dashed var(--line);border-radius:14px;background:rgba(18,6,9,.35)}
     #signModal .sw-pdfbox div{max-height:none!important;min-height:0!important;overflow:visible!important}
@@ -28,6 +29,11 @@
   let lastKey = "";
 
   function norm(s) { return (s || "").toLowerCase().replace(/[^a-z0-9]+/g, ""); }
+  function setStatus(box, txt) {
+    let s = box.querySelector(".sw-status");
+    if (!s) { s = document.createElement("div"); s.className = "sw-status"; box.prepend(s); }
+    s.textContent = txt;
+  }
 
   function getContainer(modal) {
     const canvases = Array.from(modal.querySelectorAll("canvas"));
@@ -69,19 +75,24 @@
   function findPdfUrl(modal) {
     let nt = norm((modal.querySelector(".modal-head h3") || {}).textContent || "");
     if (nt.indexOf("spiderweb") === 0) nt = nt.slice(9);
-    if (!nt) return "";
-    const anchors = Array.from(document.querySelectorAll('a[href*="supabase"], a[href*=".pdf"]'));
-    for (const a of anchors) {
-      const card = a.closest(".doc-card") || a.closest(".task-row") || a.parentElement;
-      const txt = norm(card ? card.textContent : "");
-      if (txt && (txt.includes(nt) || (nt.length > 8 && txt.includes(nt.slice(0, 12))))) return a.href;
+    const pub = Array.from(document.querySelectorAll('a[href*="/storage/v1/object/public/"]'));
+    if (nt) {
+      for (const a of pub) {
+        const card = a.closest(".doc-card") || a.closest(".task-row") || a.parentElement;
+        const txt = norm(card ? card.textContent : "");
+        if (txt && (txt.includes(nt) || (nt.length > 8 && txt.includes(nt.slice(0, 12))))) return a.href;
+      }
     }
-    return "";
+    const anyAnchor = pub[0] ? pub[0].href : "";
+    const docs = (window.state && state.docs) || [];
+    const byTitle = docs.find((d) => nt && (norm(d.title || "") === nt || norm(d.title || "").includes(nt) || nt.includes(norm(d.title || "\u0000"))));
+    const anyDoc = docs.find((d) => d.publicUrl || d.fileUrl || d.url);
+    return (byTitle && (byTitle.publicUrl || byTitle.fileUrl || byTitle.url)) || anyAnchor || (anyDoc && (anyDoc.publicUrl || anyDoc.fileUrl || anyDoc.url)) || "";
   }
 
   async function renderPage(pdf, n) {
     const page = await pdf.getPage(n);
-    const vp = page.getViewport({ scale: 1.4 });
+    const vp = page.getViewport({ scale: 1.2 });
     const c = document.createElement("canvas");
     c.width = Math.floor(vp.width);
     c.height = Math.floor(vp.height);
@@ -90,30 +101,33 @@
   }
 
   async function ensurePages(modal, box) {
-    if (!window.pdfjsLib) return;
+    if (!window.pdfjsLib) { setStatus(box, "drop8: pdf.js missing."); return; }
     const m = (modal.textContent || "").match(/first \d+ of (\d+)/i);
     const total = m ? parseInt(m[1], 10) : 0;
     const shown = box.querySelectorAll("canvas").length;
     if (total && shown >= total) return;
     const url = findPdfUrl(modal);
-    if (!url) { console.warn("drop8: pdf url not found"); return; }
+    if (!url) { setStatus(box, "drop8: PDF source not found (no Download link matched)."); return; }
+    setStatus(box, "drop8: loading PDF…");
     try {
-      const buf = await fetch(url).then((r) => r.arrayBuffer());
+      const buf = await fetch(url).then((r) => {
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        return r.arrayBuffer();
+      });
       const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
-      if (shown === 0) {
-        for (let n = 1; n <= pdf.numPages; n++) {
-          const t = document.createElement("div"); t.className = "pg-tag";
-          box.appendChild(t);
-          box.appendChild(await renderPage(pdf, n));
-        }
-      } else {
-        for (let n = shown + 1; n <= pdf.numPages; n++) {
-          const t = document.createElement("div"); t.className = "pg-tag";
-          box.appendChild(t);
-          box.appendChild(await renderPage(pdf, n));
-        }
+      const from = shown === 0 ? 1 : shown + 1;
+      for (let n = from; n <= pdf.numPages; n++) {
+        setStatus(box, "drop8: rendering page " + n + " / " + pdf.numPages + "…");
+        const t = document.createElement("div"); t.className = "pg-tag";
+        box.appendChild(t);
+        box.appendChild(await renderPage(pdf, n));
       }
-    } catch (e) { console.warn("drop8 render failed:", e); }
+      setStatus(box, "drop8: done — " + pdf.numPages + " pages ready.");
+      setTimeout(() => { const s = box.querySelector(".sw-status"); if (s) s.remove(); }, 2500);
+    } catch (e) {
+      console.warn("drop8 render failed:", e);
+      setStatus(box, "drop8 failed: " + (e.message || e) + " — url: " + url.slice(0, 60));
+    }
   }
 
   function buildPager(box) {
@@ -183,6 +197,6 @@
     new MutationObserver(() => setTimeout(fix, 300)).observe(modal, { subtree: true, childList: true, attributes: true });
   }
 
-  console.log("SPIDERWEB Drop 8 v6 loaded.");
+  console.log("SPIDERWEB Drop 8 v7 loaded.");
 })();
 /* SPIDERWEB-DROP8-END */
