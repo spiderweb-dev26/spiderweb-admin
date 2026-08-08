@@ -1,4 +1,4 @@
-/* SPIDERWEB DROP 8 v7 — instrumented self-sufficient pager */
+/* SPIDERWEB DROP 8 v8 — Firestore-sourced pager + sign-every-page */
 (function () {
   "use strict";
   if (window.__DROP8__) return;
@@ -6,141 +6,123 @@
 
   const style = document.createElement("style");
   style.textContent = `
-    .pg-tag{font-family:"Bangers",cursive;letter-spacing:.08em;color:var(--mut);font-size:.85rem;margin:2px 0 -6px}
-    .sw-status{color:var(--mut);font-size:.85rem;margin:0 0 8px;font-style:italic}
-    #signModal .sw-pdfbox{max-height:70vh;overflow-y:auto!important;padding:10px;
-      border:2px dashed var(--line);border-radius:14px;background:rgba(18,6,9,.35)}
-    #signModal .sw-pdfbox div{max-height:none!important;min-height:0!important;overflow:visible!important}
-    #signModal .sw-pdfbox canvas{width:100%!important;height:auto!important;max-height:none!important;
-      object-fit:initial!important;display:none;border-radius:8px;box-shadow:4px 4px 0 rgba(0,0,0,.55);cursor:crosshair}
-    #signModal .sw-pdfbox canvas.sw-cur{display:block}
-    #signModal .sw-pdfbox .pg-tag{display:none}
-    #signModal .sw-pdfbox .pg-tag.sw-cur{display:block}
+    .sw-viewer{margin:0 0 14px}
+    .sw-status{color:var(--mut);font-size:.85rem;font-style:italic;margin:0 0 6px}
     .sw-pager{display:flex;gap:12px;align-items:center;justify-content:center;margin:0 0 10px}
     .sw-pager button{border:2px solid var(--line);background:rgba(35,16,23,.7);color:var(--ink);
       border-radius:10px;padding:8px 14px;cursor:pointer;font-size:1rem}
     .sw-pager button:hover{border-color:rgba(230,36,46,.45)}
     .sw-pager button:disabled{opacity:.35;cursor:not-allowed}
-    .sw-pager .sw-count{font-family:"Bangers",cursive;letter-spacing:.08em;color:var(--ink)}
+    .sw-pager .sw-count{font-family:"Bangers",cursive;letter-spacing:.08em}
+    .sw-pagebox{max-height:60vh;overflow:auto;border:2px dashed var(--line);border-radius:14px;padding:10px;background:rgba(18,6,9,.35)}
+    .sw-pagebox canvas{width:100%;height:auto;display:none;border-radius:8px;box-shadow:4px 4px 0 rgba(0,0,0,.55);cursor:crosshair}
+    .sw-pagebox canvas.sw-cur{display:block}
+    .sw-every{display:flex;gap:10px;align-items:center;margin:10px 0 0;color:var(--ink);font-size:.95rem}
+    .sw-every input{width:18px;height:18px;accent-color:var(--red)}
+    #swSignAll{margin-top:10px}
   `;
   document.head.appendChild(style);
 
   let busy = false;
   let lastKey = "";
+  let cachedBytes = null;
+  let cachedDoc = null;
 
   function norm(s) { return (s || "").toLowerCase().replace(/[^a-z0-9]+/g, ""); }
-  function setStatus(box, txt) {
-    let s = box.querySelector(".sw-status");
-    if (!s) { s = document.createElement("div"); s.className = "sw-status"; box.prepend(s); }
-    s.textContent = txt;
-  }
-
-  function getContainer(modal) {
-    const canvases = Array.from(modal.querySelectorAll("canvas"));
-    if (canvases.length) {
-      let box = canvases[0].parentElement;
-      while (box && box !== modal && !canvases.every((c) => box.contains(c))) box = box.parentElement;
-      if (box && box !== modal) { box.classList.add("sw-pdfbox"); return box; }
-    }
-    const caps = Array.from(modal.querySelectorAll("p,div,span")).filter((el) =>
-      el.children.length === 0 && /preview shows/i.test(el.textContent || ""));
-    if (caps[0] && caps[0].parentElement) { caps[0].parentElement.classList.add("sw-pdfbox"); return caps[0].parentElement; }
-    return null;
-  }
-
-  function unclip(box) {
-    [box].concat(Array.from(box.querySelectorAll("div"))).forEach((el) => {
-      el.style.height = ""; el.style.maxHeight = ""; el.style.minHeight = ""; el.style.overflow = "";
-    });
-    Array.from(box.querySelectorAll("canvas")).forEach((c) => {
-      c.style.width = "100%"; c.style.height = "auto"; c.style.maxHeight = "none"; c.style.objectFit = "initial";
-    });
-  }
-
-  function tagPages(box) {
-    Array.from(box.querySelectorAll("canvas")).forEach((c, i) => {
-      if (!(c.previousElementSibling && c.previousElementSibling.classList.contains("pg-tag"))) {
-        const t = document.createElement("div");
-        t.className = "pg-tag";
-        box.insertBefore(t, c);
-      }
-    });
-    Array.from(box.querySelectorAll("canvas")).forEach((c, i) => {
-      if (c.previousElementSibling && c.previousElementSibling.classList.contains("pg-tag")) {
-        c.previousElementSibling.textContent = "PAGE " + (i + 1);
-      }
-    });
-  }
-
-  function findPdfUrl(modal) {
-    let nt = norm((modal.querySelector(".modal-head h3") || {}).textContent || "");
-    if (nt.indexOf("spiderweb") === 0) nt = nt.slice(9);
-    const pub = Array.from(document.querySelectorAll('a[href*="/storage/v1/object/public/"]'));
-    if (nt) {
-      for (const a of pub) {
-        const card = a.closest(".doc-card") || a.closest(".task-row") || a.parentElement;
-        const txt = norm(card ? card.textContent : "");
-        if (txt && (txt.includes(nt) || (nt.length > 8 && txt.includes(nt.slice(0, 12))))) return a.href;
-      }
-    }
-    const anyAnchor = pub[0] ? pub[0].href : "";
-    const docs = (window.state && state.docs) || [];
-    const byTitle = docs.find((d) => nt && (norm(d.title || "") === nt || norm(d.title || "").includes(nt) || nt.includes(norm(d.title || "\u0000"))));
-    const anyDoc = docs.find((d) => d.publicUrl || d.fileUrl || d.url);
-    return (byTitle && (byTitle.publicUrl || byTitle.fileUrl || byTitle.url)) || anyAnchor || (anyDoc && (anyDoc.publicUrl || anyDoc.fileUrl || anyDoc.url)) || "";
-  }
-
-  async function renderPage(pdf, n) {
-    const page = await pdf.getPage(n);
-    const vp = page.getViewport({ scale: 1.2 });
+  function typedInk8(name) {
     const c = document.createElement("canvas");
-    c.width = Math.floor(vp.width);
-    c.height = Math.floor(vp.height);
-    await page.render({ canvasContext: c.getContext("2d"), viewport: vp }).promise;
-    return c;
+    c.width = 620; c.height = 150;
+    const ctx = c.getContext("2d");
+    ctx.clearRect(0, 0, c.width, c.height);
+    ctx.fillStyle = "#22080d";
+    ctx.font = 'italic 64px "Segoe Script","Brush Script MT","Comic Sans MS",cursive';
+    ctx.textBaseline = "middle";
+    ctx.fillText(name, 24, 78, 580);
+    return c.toDataURL("image/png");
   }
 
-  async function ensurePages(modal, box) {
-    if (!window.pdfjsLib) { setStatus(box, "drop8: pdf.js missing."); return; }
-    const m = (modal.textContent || "").match(/first \d+ of (\d+)/i);
-    const total = m ? parseInt(m[1], 10) : 0;
-    const shown = box.querySelectorAll("canvas").length;
-    if (total && shown >= total) return;
-    const url = findPdfUrl(modal);
-    if (!url) { setStatus(box, "drop8: PDF source not found (no Download link matched)."); return; }
-    setStatus(box, "drop8: loading PDF…");
+  function viewer(modal) {
+    let v = modal.querySelector(".sw-viewer");
+    if (v) return v;
+    const head = modal.querySelector(".modal-head");
+    v = document.createElement("div");
+    v.className = "sw-viewer";
+    v.innerHTML = `
+      <div class="sw-status"></div>
+      <div class="sw-pager"><button type="button" data-pg="prev">◀</button><span class="sw-count"></span><button type="button" data-pg="next">▶</button></div>
+      <div class="sw-pagebox"></div>
+      <label class="sw-every"><input type="checkbox" id="swEvery" /> Sign every page at the bottom</label>
+      <button id="swSignAll" class="btn hidden" type="button">⚡ Sign all pages (bottom)</button>`;
+    head.insertAdjacentElement("afterend", v);
+    const box = v.querySelector(".sw-pagebox");
+    v.querySelector('[data-pg="prev"]').addEventListener("click", () => step(box, -1));
+    v.querySelector('[data-pg="next"]').addEventListener("click", () => step(box, 1));
+    v.querySelector("#swEvery").addEventListener("change", (e) => {
+      v.querySelector("#swSignAll").classList.toggle("hidden", !e.target.checked);
+    });
+    v.querySelector("#swSignAll").addEventListener("click", signAllPages);
+    return v;
+  }
+  function setStatus(v, t) { v.querySelector(".sw-status").textContent = t; }
+
+  async function getPdfSource(modal) {
+    const h3 = modal.querySelector(".modal-head h3");
+    let nt = norm(h3 ? h3.textContent : "");
+    if (nt.indexOf("spiderweb") === 0) nt = nt.slice(9);
+    const snap = await db.collection("c").doc("docs").collection("list").orderBy("createdAt", "desc").get();
+    const docs = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    const hit = docs.find((d) => {
+      const t = norm(d.title || "");
+      const f = norm((d.fileName || "").replace(/\.pdf$/i, ""));
+      return nt && t && (t === nt || t.includes(nt) || nt.includes(t) || (f && (f === nt || nt.includes(f) || f.includes(nt))));
+    }) || docs[0];
+    if (!hit) return null;
+    const url = hit.publicUrl || hit.fileUrl || hit.url || hit.downloadUrl ||
+      (hit.storagePath ? (SUPABASE_URL + "/storage/v1/object/public/" + hit.storagePath) : "");
+    if (url) return { url, hit };
+    const data = hit.dataUrl || hit.base64 || hit.pdfData || "";
+    if (data) return { data, hit };
+    return { hit };
+  }
+
+  async function loadPages(modal, v) {
+    const box = v.querySelector(".sw-pagebox");
+    if (!window.pdfjsLib) { setStatus(v, "drop8: pdf.js missing."); return; }
+    setStatus(v, "drop8: locating the PDF in Firestore…");
+    let src = null;
+    try { src = await getPdfSource(modal); } catch (e) { setStatus(v, "drop8: Firestore read failed — " + e.message); return; }
+    if (!src) { setStatus(v, "drop8: no document found."); return; }
+    cachedDoc = src.hit;
     try {
-      const buf = await fetch(url).then((r) => {
-        if (!r.ok) throw new Error("HTTP " + r.status);
-        return r.arrayBuffer();
-      });
-      const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
-      const from = shown === 0 ? 1 : shown + 1;
-      for (let n = from; n <= pdf.numPages; n++) {
-        setStatus(box, "drop8: rendering page " + n + " / " + pdf.numPages + "…");
-        const t = document.createElement("div"); t.className = "pg-tag";
-        box.appendChild(t);
-        box.appendChild(await renderPage(pdf, n));
+      if (!cachedBytes) {
+        setStatus(v, "drop8: downloading PDF…");
+        cachedBytes = await fetch(src.url || src.data).then((r) => {
+          if (!r.ok) throw new Error("HTTP " + r.status);
+          return r.arrayBuffer();
+        });
       }
-      setStatus(box, "drop8: done — " + pdf.numPages + " pages ready.");
-      setTimeout(() => { const s = box.querySelector(".sw-status"); if (s) s.remove(); }, 2500);
+      const pdf = await pdfjsLib.getDocument({ data: cachedBytes.slice(0) }).promise;
+      box.innerHTML = "";
+      for (let n = 1; n <= pdf.numPages; n++) {
+        setStatus(v, "drop8: rendering page " + n + " / " + pdf.numPages + "…");
+        const page = await pdf.getPage(n);
+        const vp = page.getViewport({ scale: 1.2 });
+        const c = document.createElement("canvas");
+        c.width = Math.floor(vp.width);
+        c.height = Math.floor(vp.height);
+        await page.render({ canvasContext: c.getContext("2d"), viewport: vp }).promise;
+        box.appendChild(c);
+      }
+      // hide the old inline preview (it only shows 5)
+      const caps = Array.from(modal.querySelectorAll("p,div,span")).filter((el) =>
+        el.children.length === 0 && /preview shows/i.test(el.textContent || ""));
+      if (caps[0] && caps[0].parentElement) caps[0].parentElement.style.display = "none";
+      setStatus(v, "");
+      show(box, 0);
     } catch (e) {
-      console.warn("drop8 render failed:", e);
-      setStatus(box, "drop8 failed: " + (e.message || e) + " — url: " + url.slice(0, 60));
+      console.warn("drop8:", e);
+      setStatus(v, "drop8 failed: " + (e.message || e));
     }
-  }
-
-  function buildPager(box) {
-    if (!box.querySelectorAll("canvas").length) return;
-    if (!box.parentElement.querySelector(".sw-pager")) {
-      const bar = document.createElement("div");
-      bar.className = "sw-pager";
-      bar.innerHTML = '<button type="button" data-pg="prev">◀</button><span class="sw-count"></span><button type="button" data-pg="next">▶</button>';
-      box.parentElement.insertBefore(bar, box);
-      bar.querySelector('[data-pg="prev"]').addEventListener("click", () => step(box, -1));
-      bar.querySelector('[data-pg="next"]').addEventListener("click", () => step(box, 1));
-    }
-    show(box, parseInt(box.dataset.cur || "0", 10));
   }
 
   function show(box, i) {
@@ -148,46 +130,70 @@
     if (!canvases.length) return;
     i = Math.max(0, Math.min(canvases.length - 1, i));
     box.dataset.cur = i;
-    canvases.forEach((c, k) => {
-      c.classList.toggle("sw-cur", k === i);
-      const tag = c.previousElementSibling;
-      if (tag && tag.classList.contains("pg-tag")) tag.classList.toggle("sw-cur", k === i);
-    });
-    const bar = box.parentElement.querySelector(".sw-pager");
-    if (bar) {
-      bar.querySelector(".sw-count").textContent = "PAGE " + (i + 1) + " OF " + canvases.length;
-      bar.querySelector('[data-pg="prev"]').disabled = i === 0;
-      bar.querySelector('[data-pg="next"]').disabled = i === canvases.length - 1;
-    }
+    canvases.forEach((c, k) => c.classList.toggle("sw-cur", k === i));
+    const v = box.closest(".sw-viewer");
+    v.querySelector(".sw-count").textContent = "PAGE " + (i + 1) + " OF " + canvases.length;
+    v.querySelector('[data-pg="prev"]').disabled = i === 0;
+    v.querySelector('[data-pg="next"]').disabled = i === canvases.length - 1;
     box.scrollTop = 0;
   }
   function step(box, d) { show(box, parseInt(box.dataset.cur || "0", 10) + d); }
 
+  async function signAllPages() {
+    if (!cachedBytes || !cachedDoc) { toast("PDF not loaded yet.", "err"); return; }
+    if (!window.PDFLib) { toast("pdf-lib missing.", "err"); return; }
+    const name = (state.profile && state.profile.name) || "Signer";
+    try {
+      toast("Stamping every page…");
+      const pdfDoc = await PDFLib.PDFDocument.load(cachedBytes.slice(0));
+      const ink = await pdfDoc.embedPng(typedInk8(name));
+      const pages = pdfDoc.getPages();
+      pages.forEach((pg) => {
+        const { width } = pg.getSize();
+        const w = 190;
+        const h = w * ink.height / ink.width;
+        pg.drawImage(ink, { x: (width - w) / 2, y: 34, width: w, height: h });
+      });
+      const out = await pdfDoc.save();
+      const safe = (cachedDoc.fileName || cachedDoc.title || "doc").replace(/[^\w.\-]+/g, "-");
+      const path = "signed/" + state.user.uid + "/" + Date.now() + "-" + safe;
+      const up = await supabaseClient.storage.from(SUPABASE_BUCKET).upload(path, new Blob([out], { type: "application/pdf" }), { cacheControl: "3600", upsert: false });
+      if (up.error) throw up.error;
+      const pub = supabaseClient.storage.from(SUPABASE_BUCKET).getPublicUrl(path).data.publicUrl;
+      await db.collection("c").doc("docs").collection("list").doc(cachedDoc.id).update({
+        signatures: firebase.firestore.FieldValue.arrayUnion({
+          name, email: state.user.email || "", uid: state.user.uid,
+          method: "one-click", page: "all-pages-bottom",
+          device: (navigator.userAgent || "") + " · " + new Date().toLocaleString(),
+          signedAt: new Date().toISOString(), ink: typedInk8(name), fileUrl: pub
+        })
+      });
+      toast("Signed every page at the bottom — signed copy saved.", "ok");
+    } catch (e) {
+      console.error(e);
+      toast("Sign-all failed: " + (e.message || e), "err");
+    }
+  }
+
   async function fix() {
     const modal = document.getElementById("signModal");
     if (!modal || modal.classList.contains("hidden") || busy) return;
-    const box = getContainer(modal);
-    if (!box) return;
-    unclip(box);
-    const key = ((modal.querySelector(".modal-head h3") || {}).textContent || "") + "|" + box.querySelectorAll("canvas").length;
+    const v = viewer(modal);
+    const key = (modal.querySelector(".modal-head h3") || {}).textContent || "";
     if (key !== lastKey) {
       lastKey = key;
+      cachedBytes = null;
       busy = true;
-      await ensurePages(modal, box);
-      unclip(box);
-      tagPages(box);
+      await loadPages(modal, v);
       busy = false;
-    } else {
-      tagPages(box);
     }
-    buildPager(box);
   }
 
   document.addEventListener("keydown", (e) => {
     const modal = document.getElementById("signModal");
     if (!modal || modal.classList.contains("hidden")) return;
-    const box = modal.querySelector(".sw-pdfbox");
-    if (!box) return;
+    const box = modal.querySelector(".sw-pagebox");
+    if (!box || !box.querySelectorAll("canvas").length) return;
     if (e.key === "ArrowLeft") step(box, -1);
     if (e.key === "ArrowRight") step(box, 1);
   });
@@ -197,6 +203,6 @@
     new MutationObserver(() => setTimeout(fix, 300)).observe(modal, { subtree: true, childList: true, attributes: true });
   }
 
-  console.log("SPIDERWEB Drop 8 v7 loaded.");
+  console.log("SPIDERWEB Drop 8 v8 loaded.");
 })();
 /* SPIDERWEB-DROP8-END */
