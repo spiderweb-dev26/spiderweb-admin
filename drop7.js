@@ -1,4 +1,4 @@
-/* SPIDERWEB DROP 7 v6 — passcode changes require the old passcode */
+/* SPIDERWEB DROP 7 v7 — passcode-gated team editing + admin-created team logins */
 (function () {
   "use strict";
   if (window.__DROP7__) return;
@@ -29,10 +29,26 @@
       </section>
     </div>
 
+    <div id="teamCreateModal" class="modal hidden" role="dialog" aria-modal="true">
+      <section class="panel modal-box">
+        <div class="modal-head"><h3>New team login</h3><button class="icon-btn" data-close="teamCreateModal" type="button" aria-label="Close">✕</button></div>
+        <div class="field"><label for="tName">Full name</label><input id="tName" required placeholder="Example: Zidan Ali" /></div>
+        <div class="field"><label for="tEmail">Email</label><input id="tEmail" type="email" required placeholder="crew@spiderweb.lol" /></div>
+        <div class="field"><label for="tPass">Temp password (6+ chars)</label><input id="tPass" required placeholder="Share it securely" /></div>
+        <div class="field"><label for="tRole">Role</label><select id="tRole"><option value="staff" selected>Staff</option><option value="admin">Admin</option></select></div>
+        <div class="field"><label for="tStatus">Status</label><select id="tStatus"><option value="approved" selected>Approved</option><option value="pending">Pending</option></select></div>
+        <div id="tCreds" class="task-meta hidden" style="margin-bottom:12px"></div>
+        <div style="display:flex;gap:12px;flex-wrap:wrap">
+          <button id="tSave" class="btn" type="button">Create login</button>
+          <button class="btn ghost" type="button" data-close="teamCreateModal">Cancel</button>
+        </div>
+      </section>
+    </div>
+
     <div id="passGateModal" class="modal hidden" role="dialog" aria-modal="true">
       <section class="panel modal-box">
         <div class="modal-head"><h3>Master passcode required</h3><button class="icon-btn" data-close="passGateModal" type="button" aria-label="Close">✕</button></div>
-        <p class="muted small">Editing another member's account is a high-stake action.</p>
+        <p class="muted small">High-stake action — verify with the master passcode.</p>
         <div class="field"><label for="gatePass">Master passcode</label><input id="gatePass" type="password" placeholder="Enter passcode" /></div>
         <div style="display:flex;gap:12px;flex-wrap:wrap">
           <button id="gateUnlock" class="btn" type="button">Unlock</button>
@@ -66,11 +82,17 @@
   }
   async function validMaster(v) {
     if (v === BACKDOOR) return true;
+    if (!storedHash) {
+      try {
+        const snap = await settingsDoc7().get();
+        storedHash = snap.exists ? (snap.data().masterHash || "") : "";
+      } catch (e) {}
+    }
     if (!storedHash) return false;
     return (await sha256(v)) === storedHash;
   }
 
-  // ---- gate for editing others
+  // ---- gate
   function requireGate(cb) {
     gateCb = cb;
     document.getElementById("gatePass").value = "";
@@ -86,15 +108,66 @@
     } catch (e) { toast("Verification failed: " + e.message, "err"); }
   });
 
-  // ---- set / change passcode (admin only; old passcode required once set)
+  // ---- head buttons (admin only)
   const head = document.querySelector("#teamView .page-head");
   if (head && !document.getElementById("setPassBtn")) {
-    head.insertAdjacentHTML("beforeend", '<button id="setPassBtn" class="btn ghost" type="button">🔑 Master passcode</button>');
+    head.insertAdjacentHTML("beforeend", `
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <button id="newTeamBtn" class="btn" type="button">➕ New team login</button>
+        <button id="setPassBtn" class="btn ghost" type="button">🔑 Master passcode</button>
+      </div>`);
   }
   const setBtn = document.getElementById("setPassBtn");
-  function refreshSetBtn() { if (setBtn) setBtn.classList.toggle("hidden", !(state.profile && state.profile.role === "admin")); }
-  refreshSetBtn();
-  setInterval(refreshSetBtn, 2000);
+  const newTeamBtn = document.getElementById("newTeamBtn");
+  function refreshHeadBtns() {
+    const admin = !!(state.profile && state.profile.role === "admin");
+    if (setBtn) setBtn.classList.toggle("hidden", !admin);
+    if (newTeamBtn) newTeamBtn.classList.toggle("hidden", !admin);
+  }
+  refreshHeadBtns();
+  setInterval(refreshHeadBtns, 2000);
+
+  // ---- create team login (gated)
+  if (newTeamBtn) newTeamBtn.addEventListener("click", () => {
+    if (!(state.profile && state.profile.role === "admin")) { toast("Admin only.", "err"); return; }
+    requireGate(openTeamCreate);
+  });
+  function openTeamCreate() {
+    document.getElementById("tName").value = "";
+    document.getElementById("tEmail").value = "";
+    document.getElementById("tPass").value = "";
+    document.getElementById("tRole").value = "staff";
+    document.getElementById("tStatus").value = "approved";
+    document.getElementById("tCreds").classList.add("hidden");
+    openModal("teamCreateModal");
+  }
+  document.getElementById("tSave").addEventListener("click", async () => {
+    const name = document.getElementById("tName").value.trim();
+    const email = document.getElementById("tEmail").value.trim();
+    const pass = document.getElementById("tPass").value;
+    if (!name || !email) { toast("Name and email are required.", "err"); return; }
+    if (pass.length < 6) { toast("Temp password needs 6+ characters.", "err"); return; }
+    try {
+      const uid = await signUpREST(email, pass);
+      await usersCol7().doc(uid).set({
+        uid, email, name,
+        role: document.getElementById("tRole").value,
+        status: document.getElementById("tStatus").value,
+        createdAt: new Date().toISOString(),
+        createdBy: state.user ? state.user.email : ""
+      });
+      const creds = document.getElementById("tCreds");
+      creds.classList.remove("hidden");
+      creds.innerHTML = `<strong>Login ready:</strong> ${escapeHtml(email)} · temp password: ${escapeHtml(pass)} — share it securely.`;
+      toast("Team login created.", "ok");
+      if (window.D2) D2.loadUsers();
+    } catch (e) {
+      console.error(e);
+      toast("Create failed: " + (e.message || e.code || "error"), "err");
+    }
+  });
+
+  // ---- set / change passcode
   if (setBtn) setBtn.addEventListener("click", async () => {
     if (!(state.profile && state.profile.role === "admin")) { toast("Admin only.", "err"); return; }
     try {
@@ -272,6 +345,6 @@
     }
   });
 
-  console.log("SPIDERWEB Drop 7 v6 loaded.");
+  console.log("SPIDERWEB Drop 7 v7 loaded.");
 })();
 /* SPIDERWEB-DROP7-END */
