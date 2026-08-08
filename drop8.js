@@ -1,4 +1,4 @@
-/* SPIDERWEB DROP 8 v4 — all pages, verified by page count */
+/* SPIDERWEB DROP 8 v5 — single-page viewer with prev/next arrows */
 (function () {
   "use strict";
   if (window.__DROP8__) return;
@@ -7,11 +7,20 @@
   const style = document.createElement("style");
   style.textContent = `
     .pg-tag{font-family:"Bangers",cursive;letter-spacing:.08em;color:var(--mut);font-size:.85rem;margin:2px 0 -6px}
-    #signModal .sw-pdfbox{max-height:62vh;overflow-y:auto!important;display:grid;gap:14px;padding:10px;
+    #signModal .sw-pdfbox{max-height:70vh;overflow-y:auto!important;padding:10px;
       border:2px dashed var(--line);border-radius:14px;background:rgba(18,6,9,.35)}
-    #signModal .sw-pdfbox div{height:auto!important;max-height:none!important;min-height:0!important;overflow:visible!important}
+    #signModal .sw-pdfbox div{max-height:none!important;min-height:0!important;overflow:visible!important}
     #signModal .sw-pdfbox canvas{width:100%!important;height:auto!important;max-height:none!important;
-      object-fit:initial!important;display:block;border-radius:8px;box-shadow:4px 4px 0 rgba(0,0,0,.55);cursor:crosshair}
+      object-fit:initial!important;display:none;border-radius:8px;box-shadow:4px 4px 0 rgba(0,0,0,.55);cursor:crosshair}
+    #signModal .sw-pdfbox canvas.sw-cur{display:block}
+    #signModal .sw-pdfbox .pg-tag{display:none}
+    #signModal .sw-pdfbox .pg-tag.sw-cur{display:block}
+    .sw-pager{display:flex;gap:12px;align-items:center;justify-content:center;margin:0 0 10px}
+    .sw-pager button{border:2px solid var(--line);background:rgba(35,16,23,.7);color:var(--ink);
+      border-radius:10px;padding:8px 14px;cursor:pointer;font-size:1rem}
+    .sw-pager button:hover{border-color:rgba(230,36,46,.45)}
+    .sw-pager button:disabled{opacity:.35;cursor:not-allowed}
+    .sw-pager .sw-count{font-family:"Bangers",cursive;letter-spacing:.08em;color:var(--ink)}
   `;
   document.head.appendChild(style);
 
@@ -44,65 +53,88 @@
       if (c.previousElementSibling && c.previousElementSibling.classList.contains("pg-tag")) return;
       const t = document.createElement("div");
       t.className = "pg-tag";
-      t.textContent = "PAGE " + (i + 1);
       box.insertBefore(t, c);
     });
-  }
-
-  function updateCaption(modal, count) {
-    const nodes = Array.from(modal.querySelectorAll("p, div, span")).filter((el) => {
-      if (el.children.length > 0) return false;
-      return /first \d+ of|preview shows/i.test(el.textContent || "");
+    // keep numbers correct
+    Array.from(box.querySelectorAll("canvas")).forEach((c, i) => {
+      if (c.previousElementSibling && c.previousElementSibling.classList.contains("pg-tag")) {
+        c.previousElementSibling.textContent = "PAGE " + (i + 1);
+      }
     });
-    if (nodes[0]) nodes[0].textContent = "Scroll to view all " + count + " pages. Tap a page to place your signature.";
   }
 
-  async function addRemainingPages(modal, box) {
+  function findPdfUrl(modal) {
+    let nt = norm((modal.querySelector(".modal-head h3") || {}).textContent || "");
+    if (nt.indexOf("spiderweb") === 0) nt = nt.slice(9);
+    if (!nt) return "";
+    const anchors = Array.from(document.querySelectorAll('a[href*="supabase"], a[href*=".pdf"]'));
+    for (const a of anchors) {
+      const card = a.closest(".doc-card") || a.closest(".task-row") || a.parentElement;
+      const txt = norm(card ? card.textContent : "");
+      if (txt && (txt.includes(nt) || (nt.length > 8 && txt.includes(nt.slice(0, 12))))) return a.href;
+    }
+    return "";
+  }
+
+  async function ensureAllPages(modal, box) {
     if (!window.pdfjsLib) return;
     const shown = box.querySelectorAll("canvas").length;
     const m = (modal.textContent || "").match(/first \d+ of (\d+)/i);
     const total = m ? parseInt(m[1], 10) : 0;
-    if (total && total <= shown) { updateCaption(modal, total); return; }
-
-    const titleEl = modal.querySelector(".modal-head h3");
-    const nt = norm(titleEl ? titleEl.textContent : "");
-    function score(x) {
-      const t = norm(x.d.title || "");
-      const f = norm((x.d.fileName || "").replace(/\.pdf$/i, ""));
-      let s = 0;
-      if (t && nt && (t === nt || t.includes(nt) || nt.includes(t))) s += 100;
-      if (f && nt && (f === nt || f.includes(nt) || nt.includes(f))) s += 50;
-      return s;
-    }
-    const cands = (state.docs || [])
-      .map((d) => ({ d, u: d.publicUrl || d.fileUrl || d.url || "" }))
-      .filter((x) => x.u && /pdf/i.test((x.d.fileType || "") + (x.d.fileName || "")))
-      .sort((a, b) => score(b) - score(a));
-
-    for (const x of cands.slice(0, 6)) {
-      try {
-        const buf = await fetch(x.u).then((r) => r.arrayBuffer());
-        const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
-        if (pdf.numPages <= shown) continue;
-        if (total && pdf.numPages !== total) continue;
-        for (let n = shown + 1; n <= pdf.numPages; n++) {
-          const page = await pdf.getPage(n);
-          const vp = page.getViewport({ scale: 1.4 });
-          const c = document.createElement("canvas");
-          c.width = Math.floor(vp.width);
-          c.height = Math.floor(vp.height);
-          await page.render({ canvasContext: c.getContext("2d"), viewport: vp }).promise;
-          const t = document.createElement("div");
-          t.className = "pg-tag";
-          t.textContent = "PAGE " + n;
-          box.appendChild(t);
-          box.appendChild(c);
-        }
-        updateCaption(modal, pdf.numPages);
-        return;
-      } catch (e) { console.warn("drop8 candidate failed:", e); }
-    }
+    if (total && shown >= total) return;
+    const url = findPdfUrl(modal);
+    if (!url) { console.warn("drop8: pdf url not found"); return; }
+    try {
+      const buf = await fetch(url).then((r) => r.arrayBuffer());
+      const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+      if (pdf.numPages <= shown) return;
+      for (let n = shown + 1; n <= pdf.numPages; n++) {
+        const page = await pdf.getPage(n);
+        const vp = page.getViewport({ scale: 1.4 });
+        const c = document.createElement("canvas");
+        c.width = Math.floor(vp.width);
+        c.height = Math.floor(vp.height);
+        await page.render({ canvasContext: c.getContext("2d"), viewport: vp }).promise;
+        const t = document.createElement("div");
+        t.className = "pg-tag";
+        box.appendChild(t);
+        box.appendChild(c);
+      }
+    } catch (e) { console.warn("drop8 render failed:", e); }
   }
+
+  function buildPager(modal, box) {
+    if (!box.querySelector(".sw-pager")) {
+      const bar = document.createElement("div");
+      bar.className = "sw-pager";
+      bar.innerHTML = '<button type="button" data-pg="prev">◀</button><span class="sw-count"></span><button type="button" data-pg="next">▶</button>';
+      box.parentElement.insertBefore(bar, box);
+      bar.querySelector('[data-pg="prev"]').addEventListener("click", () => step(box, -1));
+      bar.querySelector('[data-pg="next"]').addEventListener("click", () => step(box, 1));
+    }
+    if (!box.dataset.cur) show(box, 0);
+    else show(box, parseInt(box.dataset.cur, 10));
+  }
+
+  function show(box, i) {
+    const canvases = Array.from(box.querySelectorAll("canvas"));
+    if (!canvases.length) return;
+    i = Math.max(0, Math.min(canvases.length - 1, i));
+    box.dataset.cur = i;
+    canvases.forEach((c, k) => {
+      c.classList.toggle("sw-cur", k === i);
+      const tag = c.previousElementSibling;
+      if (tag && tag.classList.contains("pg-tag")) tag.classList.toggle("sw-cur", k === i);
+    });
+    const bar = box.parentElement.querySelector(".sw-pager");
+    if (bar) {
+      bar.querySelector(".sw-count").textContent = "PAGE " + (i + 1) + " OF " + canvases.length;
+      bar.querySelector('[data-pg="prev"]').disabled = i === 0;
+      bar.querySelector('[data-pg="next"]').disabled = i === canvases.length - 1;
+    }
+    box.scrollTop = 0;
+  }
+  function step(box, d) { show(box, (parseInt(box.dataset.cur || "0", 10)) + d); }
 
   async function fix() {
     const modal = document.getElementById("signModal");
@@ -112,20 +144,31 @@
     unclip(box);
     tagPages(box);
     const key = ((modal.querySelector(".modal-head h3") || {}).textContent || "") + "|" + box.querySelectorAll("canvas").length;
-    if (key === lastKey) return;
-    lastKey = key;
-    busy = true;
-    await addRemainingPages(modal, box);
-    unclip(box);
-    tagPages(box);
-    busy = false;
+    if (key !== lastKey) {
+      lastKey = key;
+      busy = true;
+      await ensureAllPages(modal, box);
+      unclip(box);
+      tagPages(box);
+      busy = false;
+    }
+    buildPager(modal, box);
   }
+
+  document.addEventListener("keydown", (e) => {
+    const modal = document.getElementById("signModal");
+    if (!modal || modal.classList.contains("hidden")) return;
+    const box = modal.querySelector(".sw-pdfbox");
+    if (!box) return;
+    if (e.key === "ArrowLeft") step(box, -1);
+    if (e.key === "ArrowRight") step(box, 1);
+  });
 
   const modal = document.getElementById("signModal");
   if (modal) {
     new MutationObserver(() => setTimeout(fix, 250)).observe(modal, { subtree: true, childList: true, attributes: true });
   }
 
-  console.log("SPIDERWEB Drop 8 v4 loaded.");
+  console.log("SPIDERWEB Drop 8 v5 loaded.");
 })();
 /* SPIDERWEB-DROP8-END */
