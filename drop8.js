@@ -1,4 +1,4 @@
-/* SPIDERWEB DROP 8 v18 — merged history across duplicate docs */
+/* SPIDERWEB DROP 8 v19 — single pipeline + unambiguous latest-copy view */
 (function () {
   "use strict";
   if (window.__DROP8__) return;
@@ -75,6 +75,12 @@
     }
     return { dataUrl: typedInk8(signerName()), method: "one-click" };
   }
+  function hideInlineButtons(modal) {
+    Array.from(modal.querySelectorAll("button")).forEach((b) => {
+      const t = (b.textContent || "").toLowerCase();
+      if (t.includes("sign with one click") || t.includes("sign with drawing")) b.style.display = "none";
+    });
+  }
 
   function viewer(modal) {
     let v = modal.querySelector(".sw-viewer");
@@ -90,8 +96,10 @@
       <div class="sw-btns">
         <button id="swSignTap" class="btn" type="button" disabled>⚡ SIGN WHERE I TAPPED</button>
         <button id="swSignBottom" class="btn secondary" type="button">⚡ SIGN BOTTOM OF PAGE 1</button>
+        <button id="swOpenLatest" class="btn ghost hidden" type="button">📄 OPEN LATEST SIGNED COPY</button>
       </div>`;
     head.insertAdjacentElement("afterend", v);
+    hideInlineButtons(modal);
     const box = v.querySelector(".sw-pagebox");
     v.querySelector('[data-pg="prev"]').addEventListener("click", () => step(box, -1));
     v.querySelector('[data-pg="next"]').addEventListener("click", () => step(box, 1));
@@ -123,6 +131,12 @@
     bt.disabled = !tap;
     bt.textContent = tap ? "⚡ SIGN WHERE I TAPPED (PAGE " + tap.page + ")" : "⚡ SIGN WHERE I TAPPED";
     bb.textContent = every ? "⚡ SIGN BOTTOM OF EVERY PAGE" : "⚡ SIGN BOTTOM OF PAGE " + curPage(box);
+    const entries = historyEntries();
+    let latest = null;
+    for (let i = entries.length - 1; i >= 0; i--) { if (entries[i].fileUrl) { latest = entries[i]; break; } }
+    const bo = v.querySelector("#swOpenLatest");
+    bo.classList.toggle("hidden", !latest);
+    bo.onclick = latest ? () => window.open(latest.fileUrl, "_blank") : null;
   }
 
   async function getPdfSource(modal) {
@@ -201,7 +215,7 @@
     });
     return all.sort((a, b) => String(a.signedAt || "").localeCompare(String(b.signedAt || "")));
   }
-  async function loadPages(modal, v) {
+    async function loadPages(modal, v) {
     const box = v.querySelector(".sw-pagebox");
     if (!window.pdfjsLib || !window.PDFLib) { setStatus(v, "drop8: pdf libs missing."); return; }
     setStatus(v, "drop8: locating the PDF in Firestore…");
@@ -239,10 +253,7 @@
       const caps = Array.from(modal.querySelectorAll("p,div,span")).filter((el) =>
         el.children.length === 0 && /preview shows/i.test(el.textContent || ""));
       if (caps[0] && caps[0].parentElement) caps[0].parentElement.style.display = "none";
-      Array.from(modal.querySelectorAll("button")).forEach((b) => {
-        const t = (b.textContent || "").toLowerCase();
-        if (t.includes("sign with one click") || t.includes("sign with drawing")) b.style.display = "none";
-      });
+      hideInlineButtons(modal);
       setStatus(v, entries.length
         ? "BASE = original rebuilt with " + entries.length + " prior ink(s) — all visible on pages."
         : "BASE = original document (no prior inks in history).");
@@ -366,6 +377,7 @@
     if (modal.classList.contains("hidden")) { invalidate(); return; }
     if (busy) return;
     const v = viewer(modal);
+    hideInlineButtons(modal);
     const key = (modal.querySelector(".modal-head h3") || {}).textContent || "";
     if (key !== lastKey) {
       lastKey = key;
@@ -393,6 +405,6 @@
     new MutationObserver(() => setTimeout(fix, 300)).observe(modal, { subtree: true, childList: true, attributes: true });
   }
 
-  console.log("SPIDERWEB Drop 8 v18 loaded.");
+  console.log("SPIDERWEB Drop 8 v19 loaded.");
 })();
 /* SPIDERWEB-DROP8-END */
