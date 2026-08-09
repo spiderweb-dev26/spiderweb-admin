@@ -1,4 +1,4 @@
-/* SPIDERWEB DROP 8 v14 — self-healing signature history */
+/* SPIDERWEB DROP 8 v15 — signatures accumulate (opens latest signed copy) */
 (function () {
   "use strict";
   if (window.__DROP8__) return;
@@ -79,7 +79,7 @@
     v = document.createElement("div");
     v.className = "sw-viewer";
     v.innerHTML = `
-      <div class="sw-status">Flip pages with ◀ ▶ — tap a spot if needed, pick your ink, then choose a button. The signed copy opens automatically.</div>
+      <div class="sw-status">Flip pages with ◀ ▶ — tap a spot if needed, pick your ink, then choose a button. Previous signatures stay visible.</div>
       <div class="sw-pager"><button type="button" data-pg="prev">◀</button><span class="sw-count"></span><button type="button" data-pg="next">▶</button></div>
       <div class="sw-pagebox"></div>
       <label class="sw-every"><input type="checkbox" id="swEvery" /> Bottom-sign EVERY page (not just this one)</label>
@@ -150,14 +150,25 @@
     if (!src) { setStatus(v, "drop8: no document found."); return; }
     cachedDoc = src.hit;
     lastUrl = src.url || src.data || "";
+
+    // chain: prefer the latest signed copy so old inks stay visible
+    const signedUrls = ((cachedDoc.signatures || []).filter((s) => s && s.fileUrl)).map((s) => s.fileUrl);
+    const candidates = signedUrls.length ? [signedUrls[signedUrls.length - 1], lastUrl] : [lastUrl];
     try {
-      if (!cachedBytes) {
-        setStatus(v, "drop8: downloading PDF…");
-        cachedBytes = await fetch(lastUrl).then((r) => {
-          if (!r.ok) throw new Error("HTTP " + r.status);
-          return r.arrayBuffer();
-        });
+      let loaded = false;
+      for (const u of candidates) {
+        if (!u) continue;
+        try {
+          setStatus(v, signedUrls.length && u === candidates[0] ? "drop8: opening latest signed copy…" : "drop8: downloading PDF…");
+          cachedBytes = await fetch(u).then((r) => {
+            if (!r.ok) throw new Error("HTTP " + r.status);
+            return r.arrayBuffer();
+          });
+          loaded = true;
+          break;
+        } catch (e) { console.warn("drop8: candidate failed", e); }
       }
+      if (!loaded) throw new Error("no readable PDF source");
       const pdf = await pdfjsLib.getDocument({ data: cachedBytes.slice(0) }).promise;
       box.innerHTML = "";
       for (let n = 1; n <= pdf.numPages; n++) {
@@ -176,7 +187,9 @@
         const t = (b.textContent || "").toLowerCase();
         if (t.includes("sign with one click") || t.includes("sign with drawing")) b.style.display = "none";
       });
-      setStatus(v, "Flip pages with ◀ ▶ — tap a spot if needed, pick your ink, then choose a button.");
+      setStatus(v, signedUrls.length
+        ? "Viewing the latest signed copy — previous inks are on the pages. Add yours below."
+        : "Flip pages with ◀ ▶ — tap a spot if needed, pick your ink, then choose a button.");
       show(box, 0);
       refreshBtns(v, box);
     } catch (e) {
@@ -229,7 +242,6 @@
     try {
       await ref.update({ signatures: firebase.firestore.FieldValue.arrayUnion(entry) });
     } catch (e) {
-      // metadata doc missing → recreate it so history lives somewhere real
       await ref.set({
         title: cachedDoc.title || cachedDoc.fileName || "Document",
         fileName: cachedDoc.fileName || "",
@@ -330,6 +342,6 @@
     new MutationObserver(() => setTimeout(fix, 300)).observe(modal, { subtree: true, childList: true, attributes: true });
   }
 
-  console.log("SPIDERWEB Drop 8 v14 loaded.");
+  console.log("SPIDERWEB Drop 8 v15 loaded.");
 })();
 /* SPIDERWEB-DROP8-END */
