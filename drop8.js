@@ -1,4 +1,4 @@
-/* SPIDERWEB DROP 8 v13 — two sign buttons: tapped spot / bottom of page */
+/* SPIDERWEB DROP 8 v14 — self-healing signature history */
 (function () {
   "use strict";
   if (window.__DROP8__) return;
@@ -29,6 +29,7 @@
   let lastKey = "";
   let cachedBytes = null;
   let cachedDoc = null;
+  let lastUrl = "";
   let tap = null;
 
   function norm(s) { return (s || "").toLowerCase().replace(/[^a-z0-9]+/g, ""); }
@@ -148,10 +149,11 @@
     try { src = await getPdfSource(modal); } catch (e) { setStatus(v, "drop8: Firestore read failed — " + e.message); return; }
     if (!src) { setStatus(v, "drop8: no document found."); return; }
     cachedDoc = src.hit;
+    lastUrl = src.url || src.data || "";
     try {
       if (!cachedBytes) {
         setStatus(v, "drop8: downloading PDF…");
-        cachedBytes = await fetch(src.url || src.data).then((r) => {
+        cachedBytes = await fetch(lastUrl).then((r) => {
           if (!r.ok) throw new Error("HTTP " + r.status);
           return r.arrayBuffer();
         });
@@ -218,13 +220,26 @@
     const up = await supabaseClient.storage.from(SUPABASE_BUCKET).upload(path, new Blob([out], { type: "application/pdf" }), { cacheControl: "3600", upsert: false });
     if (up.error) throw up.error;
     const pub = supabaseClient.storage.from(SUPABASE_BUCKET).getPublicUrl(path).data.publicUrl;
-    await db.collection("c").doc("docs").collection("list").doc(cachedDoc.id).update({
-      signatures: firebase.firestore.FieldValue.arrayUnion(Object.assign({
-        name: signerName(), email: state.user.email || "", uid: state.user.uid,
-        method: ink.method, device: (navigator.userAgent || "") + " · " + new Date().toLocaleString(),
-        signedAt: new Date().toISOString(), ink: ink.dataUrl, fileUrl: pub, page: label
-      }, extra || {}))
-    });
+    const entry = Object.assign({
+      name: signerName(), email: state.user.email || "", uid: state.user.uid,
+      method: ink.method, device: (navigator.userAgent || "") + " · " + new Date().toLocaleString(),
+      signedAt: new Date().toISOString(), ink: ink.dataUrl, fileUrl: pub, page: label
+    }, extra || {});
+    const ref = db.collection("c").doc("docs").collection("list").doc(cachedDoc.id);
+    try {
+      await ref.update({ signatures: firebase.firestore.FieldValue.arrayUnion(entry) });
+    } catch (e) {
+      // metadata doc missing → recreate it so history lives somewhere real
+      await ref.set({
+        title: cachedDoc.title || cachedDoc.fileName || "Document",
+        fileName: cachedDoc.fileName || "",
+        fileType: "application/pdf",
+        publicUrl: lastUrl && lastUrl.indexOf("data:") !== 0 ? lastUrl : (cachedDoc.publicUrl || pub),
+        createdAt: cachedDoc.createdAt || new Date().toISOString(),
+        restoredAt: new Date().toISOString(),
+        signatures: [entry]
+      }, { merge: true });
+    }
     return pub;
   }
 
@@ -315,6 +330,6 @@
     new MutationObserver(() => setTimeout(fix, 300)).observe(modal, { subtree: true, childList: true, attributes: true });
   }
 
-  console.log("SPIDERWEB Drop 8 v13 loaded.");
+  console.log("SPIDERWEB Drop 8 v14 loaded.");
 })();
 /* SPIDERWEB-DROP8-END */
