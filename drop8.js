@@ -1,4 +1,3 @@
-/* SPIDERWEB DROP 8 v19 — single pipeline + unambiguous latest-copy view */
 (function () {
   "use strict";
   if (window.__DROP8__) return;
@@ -37,6 +36,16 @@
   function invalidate() { cachedBytes = null; originalBytes = null; lastKey = ""; matchedDocs = []; }
 
   function norm(s) { return (s || "").toLowerCase().replace(/[^a-z0-9]+/g, ""); }
+  function normEntry(s) {
+    if (!s) return null;
+    let page = s.page, xPct = s.xPct, yPct = s.yPct;
+    if ((page === undefined || page === null || page === "") && s.placement) {
+      page = s.placement.page;
+      xPct = s.placement.x;
+      yPct = s.placement.y;
+    }
+    return Object.assign({}, s, { page: page, xPct: xPct, yPct: yPct });
+  }
   function typedInk8(name) {
     const c = document.createElement("canvas");
     c.width = 620; c.height = 150;
@@ -180,6 +189,7 @@
   }
 
   async function applyEntry(pdfDoc, bytes, entry) {
+    entry = normEntry(entry);
     if (!entry || !entry.ink) return;
     let emb;
     try { emb = await pdfDoc.embedPng(entry.ink); } catch (e) { return; }
@@ -206,16 +216,40 @@
     const all = [];
     (matchedDocs.length ? matchedDocs : [cachedDoc]).forEach((d) => {
       ((d && d.signatures) || []).forEach((s) => {
-        if (!s || !s.ink) return;
-        const k = (s.signedAt || "") + "|" + (s.page || "") + "|" + (s.name || "");
+        const n = normEntry(s);
+        if (!n || !n.ink) return;
+        const k = (n.signedAt || "") + "|" + (n.page || "") + "|" + (n.name || "");
         if (seen[k]) return;
         seen[k] = 1;
-        all.push(s);
+        all.push(n);
       });
     });
     return all.sort((a, b) => String(a.signedAt || "").localeCompare(String(b.signedAt || "")));
   }
-    async function loadPages(modal, v) {
+    function mergedSignaturesFor(doc) {
+    const nt = norm((doc && (doc.title || doc.fileName)) || "");
+    const pool = (typeof state !== "undefined" && state && Array.isArray(state.docs)) ? state.docs : [doc];
+    let matched = pool.filter((d) => {
+      const t = norm((d && (d.title || d.fileName)) || "");
+      return nt && t && (t === nt || t.includes(nt) || nt.includes(t));
+    });
+    if (!matched.length) matched = [doc];
+    const seen = {};
+    const out = [];
+    matched.forEach((d) => {
+      ((d && d.signatures) || []).forEach((s) => {
+        const n = normEntry(s);
+        if (!n || !n.ink) return;
+        const k = (n.signedAt || "") + "|" + (n.page || "") + "|" + (n.name || "");
+        if (seen[k]) return;
+        seen[k] = 1;
+        out.push(n);
+      });
+    });
+    return out.sort((a, b) => String(a.signedAt || "").localeCompare(String(b.signedAt || "")));
+  }
+
+  async function loadPages(modal, v) {
     const box = v.querySelector(".sw-pagebox");
     if (!window.pdfjsLib || !window.PDFLib) { setStatus(v, "drop8: pdf libs missing."); return; }
     setStatus(v, "drop8: locating the PDF in Firestore…");
@@ -224,6 +258,14 @@
     if (!src) { setStatus(v, "drop8: no document found."); return; }
     cachedDoc = src.hit;
     lastUrl = src.url || src.data || "";
+    try {
+      console.log("drop8 v20 matchedDocs:", matchedDocs.map((d) => ({
+        id: d.id,
+        title: d.title || d.fileName || "",
+        sigCount: ((d && d.signatures) || []).length,
+        firstKeys: (((d && d.signatures) || [])[0]) ? Object.keys(d.signatures[0]) : []
+      })));
+    } catch (e) {}
     try {
       setStatus(v, "drop8: downloading original…");
       originalBytes = await fetch(lastUrl).then((r) => {
@@ -400,11 +442,45 @@
     if (e.key === "ArrowRight") step(box, 1);
   });
 
+  (function overrideBuildSignedCopy() {
+    if (typeof window.buildSignedCopy !== "function") return;
+    const legacyBuild = window.buildSignedCopy;
+    window.buildSignedCopy = async function (doc) {
+      try {
+        const mime = (doc && doc.fileType) || "";
+        if (mime !== "application/pdf" || !window.PDFLib) return legacyBuild(doc);
+        const sigs = mergedSignaturesFor(doc);
+        const withUrl = sigs.filter((s) => s && s.fileUrl);
+        if (withUrl.length) {
+          const latest = withUrl[withUrl.length - 1];
+          window.open(latest.fileUrl, "_blank", "noopener");
+          toast("Opened the latest signed copy.", "ok");
+          return;
+        }
+        if (!sigs.length) { toast("No signatures yet.", "err"); return; }
+        const src = (doc && (doc.publicUrl || doc.fileUrl || doc.url || doc.downloadUrl)) || "";
+        if (!src) { toast("No source file to rebuild from.", "err"); return; }
+        toast("Rebuilding signed copy…");
+        const bytes = await fetch(src).then((r) => { if (!r.ok) throw new Error("HTTP " + r.status); return r.arrayBuffer(); });
+        const pdfDoc = await PDFLib.PDFDocument.load(bytes.slice(0));
+        for (const en of sigs) await applyEntry(pdfDoc, bytes, en);
+        const out = await pdfDoc.save();
+        const blobUrl = URL.createObjectURL(new Blob([out], { type: "application/pdf" }));
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
+        window.open(blobUrl, "_blank", "noopener");
+        toast("Signed copy opened in a new tab.", "ok");
+      } catch (err) {
+        console.error("drop8 signed-copy override:", err);
+        try { return legacyBuild(doc); } catch (e2) { toast("Could not open signed copy: " + (err.message || err), "err"); }
+      }
+    };
+  })();
+
   const modal = document.getElementById("signModal");
   if (modal) {
     new MutationObserver(() => setTimeout(fix, 300)).observe(modal, { subtree: true, childList: true, attributes: true });
   }
 
-  console.log("SPIDERWEB Drop 8 v19 loaded.");
+  console.log("SPIDERWEB Drop 8 v20 loaded.");
 })();
 /* SPIDERWEB-DROP8-END */
