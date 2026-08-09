@@ -1,4 +1,4 @@
-/* SPIDERWEB DROP 8 v16 — foolproof generation chaining */
+/* SPIDERWEB DROP 8 v17 — deterministic rebuild from original + history (foolproof) */
 (function () {
   "use strict";
   if (window.__DROP8__) return;
@@ -27,12 +27,13 @@
 
   let busy = false;
   let lastKey = "";
+  let originalBytes = null;
   let cachedBytes = null;
   let cachedDoc = null;
   let lastUrl = "";
   let tap = null;
 
-  function invalidate() { cachedBytes = null; lastKey = ""; }
+  function invalidate() { cachedBytes = null; originalBytes = null; lastKey = ""; }
 
   function norm(s) { return (s || "").toLowerCase().replace(/[^a-z0-9]+/g, ""); }
   function typedInk8(name) {
@@ -143,36 +144,71 @@
     return { hit };
   }
 
+  async function pdfPoint(bytes, pageNo, xPct, yPct) {
+    const jsDoc = await pdfjsLib.getDocument({ data: bytes.slice(0) }).promise;
+    const jpage = await jsDoc.getPage(pageNo);
+    const vp = jpage.getViewport({ scale: 1 });
+    if (vp.convertToPdfPoint) {
+      const pt = vp.convertToPdfPoint(xPct * vp.width, yPct * vp.height);
+      return { x: pt[0], y: pt[1] };
+    }
+    return { x: xPct * vp.width, y: (1 - yPct) * vp.height };
+  }
+
+  async function applyEntry(pdfDoc, bytes, entry) {
+    if (!entry || !entry.ink) return;
+    let emb;
+    try { emb = await pdfDoc.embedPng(entry.ink); } catch (e) { return; }
+    const w = 190;
+    const h = w * emb.height / emb.width;
+    const pages = pdfDoc.getPages();
+    if (entry.page === "all-pages-bottom") {
+      pages.forEach((pg) => pg.drawImage(emb, { x: (pg.getSize().width - w) / 2, y: 34, width: w, height: h }));
+      return;
+    }
+    const pageNo = parseInt(entry.page, 10);
+    if (!pageNo || !pages[pageNo - 1]) return;
+    const pg = pages[pageNo - 1];
+    if (typeof entry.xPct === "number" && typeof entry.yPct === "number") {
+      const pt = await pdfPoint(bytes, pageNo, entry.xPct, entry.yPct);
+      pg.drawImage(emb, { x: pt.x - w / 2, y: pt.y - h / 2, width: w, height: h });
+    } else {
+      pg.drawImage(emb, { x: (pg.getSize().width - w) / 2, y: 34, width: w, height: h });
+    }
+  }
+
+  function historyEntries() {
+    return ((cachedDoc && cachedDoc.signatures) || [])
+      .filter((s) => s && s.ink)
+      .slice()
+      .sort((a, b) => String(a.signedAt || "").localeCompare(String(b.signedAt || "")));
+  }
+
   async function loadPages(modal, v) {
     const box = v.querySelector(".sw-pagebox");
-    if (!window.pdfjsLib) { setStatus(v, "drop8: pdf.js missing."); return; }
+    if (!window.pdfjsLib || !window.PDFLib) { setStatus(v, "drop8: pdf libs missing."); return; }
     setStatus(v, "drop8: locating the PDF in Firestore…");
     let src = null;
     try { src = await getPdfSource(modal); } catch (e) { setStatus(v, "drop8: Firestore read failed — " + e.message); return; }
     if (!src) { setStatus(v, "drop8: no document found."); return; }
     cachedDoc = src.hit;
     lastUrl = src.url || src.data || "";
-
-    const signedUrls = ((cachedDoc.signatures || []).filter((s) => s && s.fileUrl)).map((s) => s.fileUrl);
-    const priorInks = signedUrls.length;
-    const candidates = priorInks ? [signedUrls[signedUrls.length - 1], lastUrl] : [lastUrl];
     try {
-      let usedSigned = false;
-      let loaded = false;
-      for (const u of candidates) {
-        if (!u) continue;
-        try {
-          setStatus(v, (u === candidates[0] && priorInks) ? "drop8: opening latest signed copy…" : "drop8: downloading PDF…");
-          cachedBytes = await fetch(u).then((r) => {
-            if (!r.ok) throw new Error("HTTP " + r.status);
-            return r.arrayBuffer();
-          });
-          usedSigned = (u === candidates[0] && priorInks > 0);
-          loaded = true;
-          break;
-        } catch (e) { console.warn("drop8: candidate failed", e); }
+      setStatus(v, "drop8: downloading original…");
+      originalBytes = await fetch(lastUrl).then((r) => {
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        return r.arrayBuffer();
+      });
+      // FOOLPROOF: rebuild = original + every history ink, in order
+      const entries = historyEntries();
+      if (entries.length) {
+        setStatus(v, "drop8: rebuilding with " + entries.length + " prior ink(s)…");
+        const pdfDoc = await PDFLib.PDFDocument.load(originalBytes.slice(0));
+        for (const en of entries) await applyEntry(pdfDoc, originalBytes, en);
+        cachedBytes = await pdfDoc.save();
+      } else {
+        cachedBytes = originalBytes.slice(0);
       }
-      if (!loaded) throw new Error("no readable PDF source");
       const pdf = await pdfjsLib.getDocument({ data: cachedBytes.slice(0) }).promise;
       box.innerHTML = "";
       for (let n = 1; n <= pdf.numPages; n++) {
@@ -191,9 +227,9 @@
         const t = (b.textContent || "").toLowerCase();
         if (t.includes("sign with one click") || t.includes("sign with drawing")) b.style.display = "none";
       });
-      setStatus(v, usedSigned
-        ? "BASE = latest signed copy (" + priorInks + " prior ink(s) visible on pages). Add yours below."
-        : "BASE = original document (no prior signed copies found).");
+      setStatus(v, entries.length
+        ? "BASE = original rebuilt with " + entries.length + " prior ink(s) — all visible on pages."
+        : "BASE = original document (no prior inks in history).");
       show(box, 0);
       refreshBtns(v, box);
     } catch (e) {
@@ -211,145 +247,4 @@
     const v = box.closest(".sw-viewer");
     v.querySelector(".sw-count").textContent = "PAGE " + (i + 1) + " OF " + canvases.length;
     v.querySelector('[data-pg="prev"]').disabled = i === 0;
-    v.querySelector('[data-pg="next"]').disabled = i === canvases.length - 1;
-    const mark = box.querySelector(".sw-mark");
-    if (mark) mark.style.display = (tap && tap.page === i + 1) ? "" : "none";
-    box.scrollTop = 0;
-    refreshBtns(v, box);
-  }
-  function step(box, d) { show(box, parseInt(box.dataset.cur || "0", 10) + d); }
-
-  async function tapToPdfPoint(pageNo, xPct, yPct) {
-    const jsDoc = await pdfjsLib.getDocument({ data: cachedBytes.slice(0) }).promise;
-    const jpage = await jsDoc.getPage(pageNo);
-    const vp = jpage.getViewport({ scale: 1 });
-    if (vp.convertToPdfPoint) {
-      const pt = vp.convertToPdfPoint(xPct * vp.width, yPct * vp.height);
-      return { x: pt[0], y: pt[1], rot: jpage.rotate };
-    }
-    return { x: xPct * vp.width, y: (1 - yPct) * vp.height, rot: jpage.rotate };
-  }
-
-  async function saveSigned(pdfDoc, label, extra, ink) {
-    const out = await pdfDoc.save();
-    const safe = (cachedDoc.fileName || cachedDoc.title || "doc").replace(/[^\w.\-]+/g, "-");
-    const path = "signed/" + state.user.uid + "/" + Date.now() + "-" + safe;
-    const up = await supabaseClient.storage.from(SUPABASE_BUCKET).upload(path, new Blob([out], { type: "application/pdf" }), { cacheControl: "3600", upsert: false });
-    if (up.error) throw up.error;
-    const pub = supabaseClient.storage.from(SUPABASE_BUCKET).getPublicUrl(path).data.publicUrl;
-    const entry = Object.assign({
-      name: signerName(), email: state.user.email || "", uid: state.user.uid,
-      method: ink.method, device: (navigator.userAgent || "") + " · " + new Date().toLocaleString(),
-      signedAt: new Date().toISOString(), ink: ink.dataUrl, fileUrl: pub, page: label
-    }, extra || {});
-    const ref = db.collection("c").doc("docs").collection("list").doc(cachedDoc.id);
-    try {
-      await ref.update({ signatures: firebase.firestore.FieldValue.arrayUnion(entry) });
-    } catch (e) {
-      await ref.set({
-        title: cachedDoc.title || cachedDoc.fileName || "Document",
-        fileName: cachedDoc.fileName || "",
-        fileType: "application/pdf",
-        publicUrl: lastUrl && lastUrl.indexOf("data:") !== 0 ? lastUrl : (cachedDoc.publicUrl || pub),
-        createdAt: cachedDoc.createdAt || new Date().toISOString(),
-        restoredAt: new Date().toISOString(),
-        signatures: [entry]
-      }, { merge: true });
-    }
-    return pub;
-  }
-
-  async function stampBottom(pg, emb) {
-    const { width } = pg.getSize();
-    const w = 190;
-    const h = w * emb.height / emb.width;
-    pg.drawImage(emb, { x: (width - w) / 2, y: 34, width: w, height: h });
-  }
-
-  async function signAtTap() {
-    if (!cachedBytes || !cachedDoc) { toast("PDF not loaded yet.", "err"); return; }
-    if (!tap) { toast("Tap the page first.", "err"); return; }
-    const ink = getInk();
-    if (!ink) return;
-    try {
-      toast("Stamping page " + tap.page + " at your spot…");
-      const pdfDoc = await PDFLib.PDFDocument.load(cachedBytes.slice(0));
-      const emb = await pdfDoc.embedPng(ink.dataUrl);
-      const pg = pdfDoc.getPages()[tap.page - 1];
-      const pt = await tapToPdfPoint(tap.page, tap.xPct, tap.yPct);
-      const w = 190;
-      const h = w * emb.height / emb.width;
-      pg.drawImage(emb, { x: pt.x - w / 2, y: pt.y - h / 2, width: w, height: h });
-      const pub = await saveSigned(pdfDoc, tap.page, { xPct: tap.xPct, yPct: tap.yPct }, ink);
-      invalidate();
-      toast("Signed page " + tap.page + " where you tapped. Opening…", "ok");
-      window.open(pub, "_blank");
-      clearTap();
-    } catch (e) { console.error(e); toast("Sign failed: " + (e.message || e), "err"); }
-  }
-
-  async function signBottom() {
-    if (!cachedBytes || !cachedDoc) { toast("PDF not loaded yet.", "err"); return; }
-    const v = document.getElementById("signModal").querySelector(".sw-viewer");
-    const box = v.querySelector(".sw-pagebox");
-    const every = v.querySelector("#swEvery").checked;
-    const ink = getInk();
-    if (!ink) return;
-    try {
-      toast(every ? "Stamping the bottom of every page…" : "Stamping the bottom of page " + curPage(box) + "…");
-      const pdfDoc = await PDFLib.PDFDocument.load(cachedBytes.slice(0));
-      const emb = await pdfDoc.embedPng(ink.dataUrl);
-      const pages = pdfDoc.getPages();
-      if (every) pages.forEach((pg) => stampBottom(pg, emb));
-      else stampBottom(pages[curPage(box) - 1], emb);
-      const pub = await saveSigned(pdfDoc, every ? "all-pages-bottom" : curPage(box), {}, ink);
-      invalidate();
-      toast(every ? "Signed the bottom of every page. Opening…" : "Signed the bottom of page " + curPage(box) + ". Opening…", "ok");
-      window.open(pub, "_blank");
-      v.querySelector("#swEvery").checked = false;
-      clearTap();
-    } catch (e) { console.error(e); toast("Sign failed: " + (e.message || e), "err"); }
-  }
-
-  function clearTap() {
-    tap = null;
-    const v = document.getElementById("signModal").querySelector(".sw-viewer");
-    const mark = v.querySelector(".sw-mark");
-    if (mark) mark.remove();
-    refreshBtns(v, v.querySelector(".sw-pagebox"));
-  }
-
-  async function fix() {
-    const modal = document.getElementById("signModal");
-    if (!modal) return;
-    if (modal.classList.contains("hidden")) { invalidate(); return; }  // closed = stale
-    if (busy) return;
-    const v = viewer(modal);
-    const key = (modal.querySelector(".modal-head h3") || {}).textContent || "";
-    if (key !== lastKey) {
-      lastKey = key;
-      cachedBytes = null;
-      tap = null;
-      busy = true;
-      await loadPages(modal, v);
-      busy = false;
-    }
-  }
-
-  document.addEventListener("keydown", (e) => {
-    const modal = document.getElementById("signModal");
-    if (!modal || modal.classList.contains("hidden")) return;
-    const box = modal.querySelector(".sw-pagebox");
-    if (!box || !box.querySelectorAll("canvas").length) return;
-    if (e.key === "ArrowLeft") step(box, -1);
-    if (e.key === "ArrowRight") step(box, 1);
-  });
-
-  const modal = document.getElementById("signModal");
-  if (modal) {
-    new MutationObserver(() => setTimeout(fix, 300)).observe(modal, { subtree: true, childList: true, attributes: true });
-  }
-
-  console.log("SPIDERWEB Drop 8 v16 loaded.");
-})();
-/* SPIDERWEB-DROP8-END */
+    v.querySelector('[data-pg="next"]').disabled = i ===
