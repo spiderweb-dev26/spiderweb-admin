@@ -1,4 +1,4 @@
-/* SPIDERWEB DROP 8 v15 — signatures accumulate (opens latest signed copy) */
+/* SPIDERWEB DROP 8 v16 — foolproof generation chaining */
 (function () {
   "use strict";
   if (window.__DROP8__) return;
@@ -31,6 +31,8 @@
   let cachedDoc = null;
   let lastUrl = "";
   let tap = null;
+
+  function invalidate() { cachedBytes = null; lastKey = ""; }
 
   function norm(s) { return (s || "").toLowerCase().replace(/[^a-z0-9]+/g, ""); }
   function typedInk8(name) {
@@ -79,7 +81,7 @@
     v = document.createElement("div");
     v.className = "sw-viewer";
     v.innerHTML = `
-      <div class="sw-status">Flip pages with ◀ ▶ — tap a spot if needed, pick your ink, then choose a button. Previous signatures stay visible.</div>
+      <div class="sw-status"></div>
       <div class="sw-pager"><button type="button" data-pg="prev">◀</button><span class="sw-count"></span><button type="button" data-pg="next">▶</button></div>
       <div class="sw-pagebox"></div>
       <label class="sw-every"><input type="checkbox" id="swEvery" /> Bottom-sign EVERY page (not just this one)</label>
@@ -151,19 +153,21 @@
     cachedDoc = src.hit;
     lastUrl = src.url || src.data || "";
 
-    // chain: prefer the latest signed copy so old inks stay visible
     const signedUrls = ((cachedDoc.signatures || []).filter((s) => s && s.fileUrl)).map((s) => s.fileUrl);
-    const candidates = signedUrls.length ? [signedUrls[signedUrls.length - 1], lastUrl] : [lastUrl];
+    const priorInks = signedUrls.length;
+    const candidates = priorInks ? [signedUrls[signedUrls.length - 1], lastUrl] : [lastUrl];
     try {
+      let usedSigned = false;
       let loaded = false;
       for (const u of candidates) {
         if (!u) continue;
         try {
-          setStatus(v, signedUrls.length && u === candidates[0] ? "drop8: opening latest signed copy…" : "drop8: downloading PDF…");
+          setStatus(v, (u === candidates[0] && priorInks) ? "drop8: opening latest signed copy…" : "drop8: downloading PDF…");
           cachedBytes = await fetch(u).then((r) => {
             if (!r.ok) throw new Error("HTTP " + r.status);
             return r.arrayBuffer();
           });
+          usedSigned = (u === candidates[0] && priorInks > 0);
           loaded = true;
           break;
         } catch (e) { console.warn("drop8: candidate failed", e); }
@@ -187,9 +191,9 @@
         const t = (b.textContent || "").toLowerCase();
         if (t.includes("sign with one click") || t.includes("sign with drawing")) b.style.display = "none";
       });
-      setStatus(v, signedUrls.length
-        ? "Viewing the latest signed copy — previous inks are on the pages. Add yours below."
-        : "Flip pages with ◀ ▶ — tap a spot if needed, pick your ink, then choose a button.");
+      setStatus(v, usedSigned
+        ? "BASE = latest signed copy (" + priorInks + " prior ink(s) visible on pages). Add yours below."
+        : "BASE = original document (no prior signed copies found).");
       show(box, 0);
       refreshBtns(v, box);
     } catch (e) {
@@ -277,6 +281,7 @@
       const h = w * emb.height / emb.width;
       pg.drawImage(emb, { x: pt.x - w / 2, y: pt.y - h / 2, width: w, height: h });
       const pub = await saveSigned(pdfDoc, tap.page, { xPct: tap.xPct, yPct: tap.yPct }, ink);
+      invalidate();
       toast("Signed page " + tap.page + " where you tapped. Opening…", "ok");
       window.open(pub, "_blank");
       clearTap();
@@ -298,6 +303,7 @@
       if (every) pages.forEach((pg) => stampBottom(pg, emb));
       else stampBottom(pages[curPage(box) - 1], emb);
       const pub = await saveSigned(pdfDoc, every ? "all-pages-bottom" : curPage(box), {}, ink);
+      invalidate();
       toast(every ? "Signed the bottom of every page. Opening…" : "Signed the bottom of page " + curPage(box) + ". Opening…", "ok");
       window.open(pub, "_blank");
       v.querySelector("#swEvery").checked = false;
@@ -315,7 +321,9 @@
 
   async function fix() {
     const modal = document.getElementById("signModal");
-    if (!modal || modal.classList.contains("hidden") || busy) return;
+    if (!modal) return;
+    if (modal.classList.contains("hidden")) { invalidate(); return; }  // closed = stale
+    if (busy) return;
     const v = viewer(modal);
     const key = (modal.querySelector(".modal-head h3") || {}).textContent || "";
     if (key !== lastKey) {
@@ -342,6 +350,6 @@
     new MutationObserver(() => setTimeout(fix, 300)).observe(modal, { subtree: true, childList: true, attributes: true });
   }
 
-  console.log("SPIDERWEB Drop 8 v15 loaded.");
+  console.log("SPIDERWEB Drop 8 v16 loaded.");
 })();
 /* SPIDERWEB-DROP8-END */
