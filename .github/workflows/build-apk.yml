@@ -5,6 +5,7 @@ on:
   push:
     paths:
       - 'android/**'
+      - 'logo.png'
       - '.github/workflows/build-apk.yml'
 
 jobs:
@@ -26,6 +27,23 @@ jobs:
 
       - name: Accept Android licenses
         run: yes | "$ANDROID_HOME"/cmdline-tools/latest/bin/sdkmanager --licenses || true
+
+      - name: Use logo.png as the app icon (vector emblem fallback)
+        working-directory: android
+        run: |
+          if [ -f ../logo.png ]; then
+            cp ../logo.png app/src/main/res/drawable/app_icon.png
+          else
+            curl -fsSL -o app/src/main/res/drawable/app_icon.png https://admin.spiderweb.lol/logo.png \
+              || curl -fsSL -o app/src/main/res/drawable/app_icon.png https://admin.spiderweb.lol/assets/logo.png \
+              || rm -f app/src/main/res/drawable/app_icon.png
+          fi
+          if [ -s app/src/main/res/drawable/app_icon.png ]; then
+            rm -f app/src/main/res/drawable/app_icon.xml
+            echo "APP ICON: logo.png"
+          else
+            echo "APP ICON: built-in vector emblem (logo.png not found)"
+          fi
 
       - name: Build debug APK
         working-directory: android
