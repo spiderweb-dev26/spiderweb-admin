@@ -182,9 +182,7 @@
       .filter((s) => s && s.ink)
       .slice()
       .sort((a, b) => String(a.signedAt || "").localeCompare(String(b.signedAt || "")));
-  }
-
-  async function loadPages(modal, v) {
+  }  async function loadPages(modal, v) {
     const box = v.querySelector(".sw-pagebox");
     if (!window.pdfjsLib || !window.PDFLib) { setStatus(v, "drop8: pdf libs missing."); return; }
     setStatus(v, "drop8: locating the PDF in Firestore…");
